@@ -169,13 +169,69 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const registerClient = async ({
+    fullName,
+    username,
+    password,
+    phone,
+    email,
+    includeEmail,
+  }) => {
+    const p_nombre = (fullName ?? '').trim();
+    const p_username = (username ?? '').trim();
+    const p_password = password ?? '';
+    const p_telefono = (phone ?? '').trim() || null;
+    const p_correo = includeEmail ? ((email ?? '').trim() || null) : null;
+
+    if (!p_nombre || !p_username || !p_password) {
+      return { ok: false, error: 'Nombre completo, usuario y contraseña son obligatorios.' };
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('registrar_cliente', {
+        p_nombre,
+        p_username,
+        p_password,
+        p_correo,
+        p_telefono,
+      });
+
+      if (error) {
+        console.error('[registrar_cliente] error:', error);
+        const msg = error?.message ?? 'Error del servidor. Intente más tarde.';
+        return { ok: false, error: msg };
+      }
+
+      if (!data) {
+        return { ok: false, error: 'No se pudo registrar el cliente.' };
+      }
+
+      const payload = Array.isArray(data) ? data[0] : data?.user ?? data?.usuario ?? data;
+      const normalized = mapUserPayload(payload);
+
+      if (normalized && !normalized.role) {
+        normalized.role = 'cliente';
+      }
+
+      if (normalized) {
+        setUser(normalized);
+        localStorage.setItem('session_user', JSON.stringify(normalized));
+      }
+
+      return { ok: true, user: normalized ?? null };
+    } catch (err) {
+      console.error('[registrar_cliente] unexpected:', err);
+      return { ok: false, error: 'Error de red. Intente nuevamente.' };
+    }
+  };
+
   const logout = () => {
     setUser(null);
     localStorage.removeItem('session_user');
   };
 
   return (
-    <AuthCtx.Provider value={{ user, login, logout }}>
+    <AuthCtx.Provider value={{ user, login, registerClient, logout }}>
       {children}
     </AuthCtx.Provider>
   );
