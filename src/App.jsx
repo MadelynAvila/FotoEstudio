@@ -37,7 +37,7 @@ export default function App(){
         </Route>
 
         {/* Panel admin (protegido, solo admin) */}
-        <Route element={<ProtectedRoute roles={["admin", "fotografo", "fotógrafo", "photographer"]} />}>
+        <Route element={<ProtectedRoute roles={["admin", "administrador", "fotografo", "fotógrafo", "photographer"]} />}>
           <Route element={<AdminLayout />}>
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/reservas" element={<AdminReservations />} />

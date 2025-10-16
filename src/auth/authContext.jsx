@@ -4,46 +4,111 @@ import { supabase } from '../lib/supabaseClient';
 
 const AuthCtx = createContext(null);
 
+const ROLE_KEYS = [
+  'role',
+  'rol',
+  'tipo',
+  'tipo_usuario',
+  'tipoUsuario',
+  'perfil',
+  'profile',
+  'user_type',
+  'rol_nombre',
+  'rolNombre',
+  'nombre_rol',
+];
+
+const ROLE_NESTED_KEYS = [
+  'nombre',
+  'name',
+  'role',
+  'rol',
+  'tipo',
+  'tipo_usuario',
+  'tipoUsuario',
+  'slug',
+];
+
+const NAME_KEYS = [
+  'name',
+  'nombre',
+  'nombrecompleto',
+  'nombre_completo',
+  'full_name',
+  'fullname',
+  'usuario',
+  'username',
+];
+
+const getNestedValue = (value, keys) => {
+  if (!value || typeof value !== 'object') return null;
+  for (const key of keys) {
+    if (value[key]) return value[key];
+  }
+  return null;
+};
+
+const extractValue = (source, keys) => {
+  for (const key of keys) {
+    const current = source?.[key];
+    if (current !== undefined && current !== null && current !== '') return current;
+  }
+  return null;
+};
+
+const sanitizeRole = (value) => {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'string' || typeof value === 'number') return value;
+  const nested = getNestedValue(value, ROLE_NESTED_KEYS);
+  if (nested === undefined || nested === null) return null;
+  if (typeof nested === 'string' || typeof nested === 'number') return nested;
+  return null;
+};
+
+const sanitizeName = (value) => {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    const nested = getNestedValue(value, NAME_KEYS);
+    if (typeof nested === 'string') return nested;
+  }
+  return null;
+};
+
 const mapUserPayload = (rawUser) => {
   if (!rawUser || typeof rawUser !== 'object') return null;
 
   const normalizedUser = { ...rawUser };
 
   if (!normalizedUser.role) {
-    const roleKeys = [
-      'role',
-      'rol',
-      'tipo',
-      'tipo_usuario',
-      'tipoUsuario',
-      'perfil',
-      'profile',
-      'user_type',
-    ];
-
-    for (const key of roleKeys) {
-      if (rawUser[key]) {
-        normalizedUser.role = rawUser[key];
-        break;
-      }
+    const candidate = extractValue(rawUser, ROLE_KEYS)
+      ?? sanitizeRole(rawUser.rol)
+      ?? sanitizeRole(rawUser.role);
+    const roleValue = sanitizeRole(candidate);
+    if (roleValue) {
+      normalizedUser.role = roleValue;
+    }
+  } else {
+    const roleValue = sanitizeRole(normalizedUser.role);
+    if (roleValue) {
+      normalizedUser.role = roleValue;
     }
   }
 
-  if (!normalizedUser.name) {
-    const nameKeys = [
-      'name',
-      'nombre',
-      'full_name',
-      'fullname',
-      'usuario',
-      'username',
-    ];
+  if (!normalizedUser.role && (rawUser.idrol ?? rawUser.id_rol ?? rawUser.rol_id)) {
+    normalizedUser.roleId = rawUser.idrol ?? rawUser.id_rol ?? rawUser.rol_id;
+  }
 
-    for (const key of nameKeys) {
-      if (rawUser[key]) {
-        normalizedUser.name = rawUser[key];
-        break;
-      }
+  if (!normalizedUser.name) {
+    const candidate = extractValue(rawUser, NAME_KEYS);
+    const nameValue = sanitizeName(candidate) ?? sanitizeName(rawUser.usuario);
+    if (nameValue) {
+      normalizedUser.name = nameValue;
+    }
+  } else {
+    const nameValue = sanitizeName(normalizedUser.name);
+    if (nameValue) {
+      normalizedUser.name = nameValue;
     }
   }
 
@@ -115,5 +180,5 @@ export function AuthProvider({ children }) {
     </AuthCtx.Provider>
   );
 }
-
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => useContext(AuthCtx);
