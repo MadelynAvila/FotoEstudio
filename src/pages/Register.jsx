@@ -81,7 +81,9 @@ export default function Register() {
         <form onSubmit={onSubmit} className="card w-full max-w-2xl space-y-6 p-10 shadow-2xl shadow-black/15">
           <div className="space-y-2 text-center">
             <h1 className="text-3xl font-display text-slate-900">Crear cuenta</h1>
-            <p className="text-sm text-slate-500">Regístrate para reservar sesiones y gestionar tus actividades como cliente.</p>
+            <p className="text-sm text-slate-500">
+              Regístrate para reservar sesiones y gestionar tus actividades como cliente.
+            </p>
           </div>
 
           <label className="grid gap-1 text-sm font-medium text-slate-700">
@@ -166,8 +168,8 @@ export default function Register() {
             )}
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          {success && <p className="text-sm text-emerald-600">{success}</p>}
+          {error && <p className="text-sm font-medium text-red-600">{error}</p>}
+          {success && <p className="text-sm font-medium text-emerald-600">{success}</p>}
 
           <button className="btn btn-primary w-full justify-center" disabled={!canSubmit}>
             {isSubmitting ? 'Registrando…' : 'Registrarme'}
@@ -184,3 +186,4 @@ export default function Register() {
     </div>
   );
 }
+
