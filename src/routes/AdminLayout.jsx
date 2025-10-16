@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import useAuth from '../lib/useAuth'
+import { useAuth } from '../auth/authContext'
 
 const NAV_ITEMS = [
   { to: '/admin', label: 'Inicio', end: true },
@@ -14,11 +14,11 @@ const NAV_ITEMS = [
 ]
 
 export default function AdminLayout(){
-  const { user, clearSession } = useAuth()
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
 
   const handleLogout = () => {
-    clearSession()
+    logout()
     navigate('/login')
   }
 
@@ -31,9 +31,7 @@ export default function AdminLayout(){
             <p className="muted text-sm">Gestiona toda la operación desde un solo lugar.</p>
           </div>
           <div className="flex items-center gap-3 text-sm md:text-base">
-            <span className="muted">
-              Conectado como <b>{user?.username ?? user?.correo}</b> ({user?.rol})
-            </span>
+            <span className="muted">Conectado como <b>{user?.name}</b> ({user?.role})</span>
             <button type="button" onClick={handleLogout} className="btn btn-primary">Cerrar sesión</button>
           </div>
         </div>
