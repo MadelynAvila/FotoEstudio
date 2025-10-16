@@ -10,6 +10,7 @@ import Services from './pages/Services'
 import Packages from './pages/Packages'
 import Booking from './pages/Booking'
 import Login from './pages/Login'
+import Register from './pages/Register'
 import Reviews from './pages/Reviews'
 import AdminDashboard from './pages/AdminDashboard'
 import AdminReservations from './pages/AdminReservations'
@@ -34,6 +35,7 @@ export default function App(){
           <Route path="/resenas" element={<Reviews />} />
           <Route path="/reservar" element={<Booking />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/registrarse" element={<Register />} />
         </Route>
 
         {/* Panel admin (protegido, solo admin) */}
