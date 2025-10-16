@@ -5,46 +5,17 @@ import { supabase } from '../lib/supabaseClient';
 const AuthCtx = createContext(null);
 
 const ROLE_KEYS = [
-  'role',
-  'rol',
-  'tipo',
-  'tipo_usuario',
-  'tipoUsuario',
-  'perfil',
-  'profile',
-  'user_type',
-  'rol_nombre',
-  'rolNombre',
-  'nombre_rol',
+  'role','rol','tipo','tipo_usuario','tipoUsuario','perfil','profile','user_type',
+  'rol_nombre','rolNombre','nombre_rol',
 ];
 
-const ROLE_NESTED_KEYS = [
-  'nombre',
-  'name',
-  'role',
-  'rol',
-  'tipo',
-  'tipo_usuario',
-  'tipoUsuario',
-  'slug',
-];
+const ROLE_NESTED_KEYS = ['nombre','name','role','rol','tipo','tipo_usuario','tipoUsuario','slug'];
 
-const NAME_KEYS = [
-  'name',
-  'nombre',
-  'nombrecompleto',
-  'nombre_completo',
-  'full_name',
-  'fullname',
-  'usuario',
-  'username',
-];
+const NAME_KEYS = ['name','nombre','nombrecompleto','nombre_completo','full_name','fullname','usuario','username'];
 
 const getNestedValue = (value, keys) => {
   if (!value || typeof value !== 'object') return null;
-  for (const key of keys) {
-    if (value[key]) return value[key];
-  }
+  for (const key of keys) if (value[key]) return value[key];
   return null;
 };
 
@@ -77,39 +48,31 @@ const sanitizeName = (value) => {
 
 const mapUserPayload = (rawUser) => {
   if (!rawUser || typeof rawUser !== 'object') return null;
-
   const normalizedUser = { ...rawUser };
 
+  // role
   if (!normalizedUser.role) {
     const candidate = extractValue(rawUser, ROLE_KEYS)
       ?? sanitizeRole(rawUser.rol)
       ?? sanitizeRole(rawUser.role);
     const roleValue = sanitizeRole(candidate);
-    if (roleValue) {
-      normalizedUser.role = roleValue;
-    }
+    if (roleValue) normalizedUser.role = roleValue;
   } else {
     const roleValue = sanitizeRole(normalizedUser.role);
-    if (roleValue) {
-      normalizedUser.role = roleValue;
-    }
+    if (roleValue) normalizedUser.role = roleValue;
   }
-
   if (!normalizedUser.role && (rawUser.idrol ?? rawUser.id_rol ?? rawUser.rol_id)) {
     normalizedUser.roleId = rawUser.idrol ?? rawUser.id_rol ?? rawUser.rol_id;
   }
 
+  // name
   if (!normalizedUser.name) {
     const candidate = extractValue(rawUser, NAME_KEYS);
     const nameValue = sanitizeName(candidate) ?? sanitizeName(rawUser.usuario);
-    if (nameValue) {
-      normalizedUser.name = nameValue;
-    }
+    if (nameValue) normalizedUser.name = nameValue;
   } else {
     const nameValue = sanitizeName(normalizedUser.name);
-    if (nameValue) {
-      normalizedUser.name = nameValue;
-    }
+    if (nameValue) normalizedUser.name = nameValue;
   }
 
   return normalizedUser;
@@ -119,10 +82,12 @@ const isMissingFunctionError = (error, fnName) => {
   if (!error) return false;
   const message = (error.message ?? '').toLowerCase();
   const code = error.code ?? '';
-  return code === 'PGRST204'
-    || message.includes(`function public.${fnName}`)
-    || message.includes(`function ${fnName}`)
-    || message.includes('does not exist');
+  return (
+    code === 'PGRST204' ||
+    message.includes(`function public.${fnName}`) ||
+    message.includes(`function ${fnName}`) ||
+    message.includes('does not exist')
+  );
 };
 
 const AUTH_USER_SELECT = `
@@ -140,37 +105,20 @@ const AUTH_USER_SELECT = `
 const hashPasswordWithDatabase = async (password) => {
   const plain = password ?? '';
   if (!plain) throw new Error('La contraseña no puede estar vacía.');
-
   const { data: salt, error: saltError } = await supabase.rpc('gen_salt', { type: 'bf' });
-  if (saltError || !salt) {
-    throw new Error('No se pudo generar la contraseña de manera segura.');
-  }
-
-  const { data: hashed, error: hashError } = await supabase.rpc('crypt', {
-    password: plain,
-    salt,
-  });
-
-  if (hashError || !hashed) {
-    throw new Error('No se pudo proteger la contraseña.');
-  }
-
+  if (saltError || !salt) throw new Error('No se pudo generar la contraseña de manera segura.');
+  const { data: hashed, error: hashError } = await supabase.rpc('crypt', { password: plain, salt });
+  if (hashError || !hashed) throw new Error('No se pudo proteger la contraseña.');
   return hashed;
 };
 
 const verifyPasswordWithDatabase = async (password, storedHash) => {
   if (!password || !storedHash) return false;
-
-  const { data, error } = await supabase.rpc('crypt', {
-    password,
-    salt: storedHash,
-  });
-
+  const { data, error } = await supabase.rpc('crypt', { password, salt: storedHash });
   if (error || !data) {
     console.error('[auth] Error verificando contraseña:', error);
     return false;
   }
-
   return data === storedHash;
 };
 
@@ -181,7 +129,6 @@ export function AuthProvider({ children }) {
     try {
       const stored = localStorage.getItem('session_user');
       if (!stored) return;
-
       const parsed = JSON.parse(stored);
       const normalized = mapUserPayload(parsed);
       setUser(normalized);
@@ -205,7 +152,6 @@ export function AuthProvider({ children }) {
         console.error('[login:fallback] error buscando por usuario:', byUsername.error);
         return { ok: false, error: 'Error del servidor. Intente de nuevo.' };
       }
-
       userRecord = byUsername.data;
 
       if (!userRecord) {
@@ -214,45 +160,36 @@ export function AuthProvider({ children }) {
           .select(AUTH_USER_SELECT)
           .eq('correo', identifier)
           .maybeSingle();
-
         if (byEmail.error) {
           console.error('[login:fallback] error buscando por correo:', byEmail.error);
           return { ok: false, error: 'Error del servidor. Intente de nuevo.' };
         }
-
         userRecord = byEmail.data;
       }
 
-      if (!userRecord) {
-        return { ok: false, error: 'Credenciales inválidas o usuario inactivo.' };
-      }
-
+      if (!userRecord) return { ok: false, error: 'Credenciales inválidas o usuario inactivo.' };
       if ((userRecord.estado ?? '').toLowerCase() !== 'activo') {
         return { ok: false, error: 'Credenciales inválidas o usuario inactivo.' };
       }
 
       const match = await verifyPasswordWithDatabase(password, userRecord.contrasena_hash);
-      if (!match) {
-        return { ok: false, error: 'Credenciales inválidas o usuario inactivo.' };
-      }
+      if (!match) return { ok: false, error: 'Credenciales inválidas o usuario inactivo.' };
 
       const { contrasena_hash, ...safePayload } = {
         ...userRecord,
         role: userRecord.rol?.nombre ?? userRecord.role ?? userRecord.rol,
         rol: userRecord.rol?.nombre ?? userRecord.rol,
-        nombre: userRecord?.cliente?.nombrecompleto
-          ?? userRecord?.fotografo?.nombrecompleto
-          ?? userRecord.username,
-        nombrecompleto: userRecord?.cliente?.nombrecompleto
-          ?? userRecord?.fotografo?.nombrecompleto,
+        nombre:
+          userRecord?.cliente?.nombrecompleto ??
+          userRecord?.fotografo?.nombrecompleto ??
+          userRecord.username,
+        nombrecompleto: userRecord?.cliente?.nombrecompleto ?? userRecord?.fotografo?.nombrecompleto,
       };
 
       const normalized = mapUserPayload(safePayload) ?? safePayload;
-
       if (normalized && !normalized.role && (userRecord.rol?.nombre ?? null)) {
         normalized.role = userRecord.rol.nombre;
       }
-
       if (normalized && !normalized.name && normalized.nombrecompleto) {
         normalized.name = normalized.nombrecompleto;
       }
@@ -264,7 +201,6 @@ export function AuthProvider({ children }) {
         setUser(null);
         localStorage.removeItem('session_user');
       }
-
       return { ok: true, user: normalized ?? null };
     } catch (err) {
       console.error('[login:fallback] unexpected error:', err);
@@ -274,21 +210,19 @@ export function AuthProvider({ children }) {
 
   const login = async (identifier, password) => {
     const p_login = (identifier ?? '').trim();
-    const p_password = (password ?? '');
+    const p_password = password ?? '';
 
     if (!p_login || !p_password) {
       return { ok: false, error: 'Ingrese usuario/correo y contraseña.' };
     }
 
     try {
-      const { data, error } = await supabase
-        .rpc('login_usuario', { p_login, p_password });
+      const { data, error } = await supabase.rpc('login_usuario', { p_login, p_password });
 
       if (error) {
         if (isMissingFunctionError(error, 'login_usuario')) {
           return fallbackLogin(p_login, p_password);
         }
-
         console.error('[login_usuario] error:', error);
         return { ok: false, error: 'Error del servidor. Intente de nuevo.' };
       }
@@ -299,11 +233,8 @@ export function AuthProvider({ children }) {
 
       const u = mapUserPayload(data[0]);
       setUser(u);
-      if (u) {
-        localStorage.setItem('session_user', JSON.stringify(u));
-      } else {
-        localStorage.removeItem('session_user');
-      }
+      if (u) localStorage.setItem('session_user', JSON.stringify(u));
+      else localStorage.removeItem('session_user');
 
       return { ok: true, user: u };
     } catch (err) {
@@ -330,111 +261,150 @@ export function AuthProvider({ children }) {
       return { ok: false, error: 'Nombre completo, usuario y contraseña son obligatorios.' };
     }
 
-    let hashedPassword;
-    try {
-      hashedPassword = await hashPasswordWithDatabase(p_password);
-    } catch (err) {
-      console.error('[registrar_cliente] hash error:', err);
-      return { ok: false, error: err.message ?? 'No se pudo proteger la contraseña.' };
-    }
-
+    // traductor de errores de constraints
     const translateConstraintError = (message) => {
       if (!message) return null;
       const lower = message.toLowerCase();
-      if (lower.includes('usuario_username_key')) {
-        return 'El nombre de usuario ya está en uso. Elige otro diferente.';
-      }
-      if (lower.includes('usuario_correo_key') || lower.includes('cliente_correo_key')) {
-        return 'El correo electrónico ya está registrado.';
-      }
-      if (lower.includes('cliente_idusuario_key')) {
-        return 'Este usuario ya está asociado a un cliente.';
-      }
+      if (lower.includes('usuario_username_key')) return 'El nombre de usuario ya está en uso. Elige otro diferente.';
+      if (lower.includes('usuario_correo_key') || lower.includes('cliente_correo_key')) return 'El correo electrónico ya está registrado.';
+      if (lower.includes('cliente_idusuario_key')) return 'Este usuario ya está asociado a un cliente.';
       return null;
     };
 
+    // Fallback manual (inserciones directas)
+    const manualRegister = async () => {
+      let hashedPassword;
+      try {
+        hashedPassword = await hashPasswordWithDatabase(p_password);
+      } catch (err) {
+        console.error('[registrar_cliente] hash error:', err);
+        return { ok: false, error: err.message ?? 'No se pudo proteger la contraseña.' };
+      }
+
+      try {
+        // buscar rol cliente
+        const roleResult = await supabase.from('rol').select('id').eq('nombre', 'cliente').maybeSingle();
+        if (roleResult.error) {
+          console.error('[registrar_cliente] rol error:', roleResult.error);
+          return { ok: false, error: 'No se pudo validar el rol de cliente. Intente más tarde.' };
+        }
+        const roleId = roleResult.data?.id;
+        if (!roleId) return { ok: false, error: 'No se encontró el rol de cliente. Contacta al administrador.' };
+
+        // crear usuario
+        const userInsert = await supabase
+          .from('usuario')
+          .insert({
+            username: p_username,
+            correo: p_correo,
+            contrasena_hash: hashedPassword,
+            estado: 'activo',
+            idrol: roleId,
+          })
+          .select('id, username, correo, estado, idrol')
+          .single();
+
+        if (userInsert.error || !userInsert.data) {
+          console.error('[registrar_cliente] usuario error:', userInsert.error);
+          const friendly = translateConstraintError(userInsert.error?.message);
+          return { ok: false, error: friendly ?? 'No se pudo crear la cuenta de usuario.' };
+        }
+        const createdUser = userInsert.data;
+
+        // crear cliente
+        const clientInsert = await supabase
+          .from('cliente')
+          .insert({
+            nombrecompleto: p_nombre,
+            telefono: p_telefono,
+            correo: p_correo,
+            idusuario: createdUser.id,
+          })
+          .select('id, nombrecompleto, telefono, correo, idusuario')
+          .single();
+
+        if (clientInsert.error || !clientInsert.data) {
+          console.error('[registrar_cliente] cliente error:', clientInsert.error);
+          // rollback del usuario
+          await supabase.from('usuario').delete().eq('id', createdUser.id);
+          const friendly = translateConstraintError(clientInsert.error?.message);
+          return { ok: false, error: friendly ?? 'No se pudo registrar el cliente.' };
+        }
+
+        // intenta login
+        const loginResult = await login(p_username, p_password);
+        if (loginResult?.ok) return loginResult;
+
+        // fallback de sesión local
+        const fallbackPayload =
+          mapUserPayload({
+            ...createdUser,
+            role: 'cliente',
+            nombre: clientInsert.data.nombrecompleto,
+            nombrecompleto: clientInsert.data.nombrecompleto,
+            cliente: clientInsert.data,
+          }) ??
+          {
+            ...createdUser,
+            role: 'cliente',
+            name: clientInsert.data.nombrecompleto,
+          };
+
+        if (fallbackPayload) {
+          setUser(fallbackPayload);
+          localStorage.setItem('session_user', JSON.stringify(fallbackPayload));
+        } else {
+          setUser(null);
+          localStorage.removeItem('session_user');
+        }
+        return { ok: true, user: fallbackPayload ?? null };
+      } catch (err) {
+        console.error('[registrar_cliente/manual] unexpected:', err);
+        return { ok: false, error: 'Error de red. Intente nuevamente.' };
+      }
+    };
+
+    // Flujo principal: RPC
     try {
-      const roleResult = await supabase
-        .from('rol')
-        .select('id')
-        .eq('nombre', 'cliente')
-        .maybeSingle();
+      const { data, error } = await supabase.rpc('registrar_cliente', {
+        p_nombre,
+        p_username,
+        p_password,
+        p_correo,
+        p_telefono,
+      });
 
-      if (roleResult.error) {
-        console.error('[registrar_cliente] rol error:', roleResult.error);
-        return { ok: false, error: 'No se pudo validar el rol de cliente. Intente más tarde.' };
+      if (error) {
+        if (isMissingFunctionError(error, 'registrar_cliente')) {
+          // si no existe la función, usamos fallback
+          return await manualRegister();
+        }
+        console.error('[registrar_cliente] error:', error);
+        const friendly = translateConstraintError(error?.message);
+        return { ok: false, error: friendly ?? (error?.message ?? 'Error del servidor. Intente más tarde.') };
       }
 
-      const roleId = roleResult.data?.id;
-      if (!roleId) {
-        return { ok: false, error: 'No se encontró el rol de cliente. Contacta al administrador.' };
-      }
+      if (!data) return { ok: false, error: 'No se pudo registrar el cliente.' };
 
-      const userInsert = await supabase
-        .from('usuario')
-        .insert({
-          username: p_username,
-          correo: p_correo,
-          contrasena_hash: hashedPassword,
-          estado: 'activo',
-          idrol: roleId,
-        })
-        .select('id, username, correo, estado, idrol')
-        .single();
+      const payload = Array.isArray(data) ? data[0] : data?.user ?? data?.usuario ?? data;
+      const normalized = mapUserPayload(payload) ?? payload;
+      if (normalized && !normalized.role) normalized.role = 'cliente';
 
-      if (userInsert.error || !userInsert.data) {
-        console.error('[registrar_cliente] usuario error:', userInsert.error);
-        const friendly = translateConstraintError(userInsert.error?.message);
-        return { ok: false, error: friendly ?? 'No se pudo crear la cuenta de usuario.' };
-      }
-
-      const createdUser = userInsert.data;
-
-      const clientInsert = await supabase
-        .from('cliente')
-        .insert({
-          nombrecompleto: p_nombre,
-          telefono: p_telefono,
-          correo: p_correo,
-          idusuario: createdUser.id,
-        })
-        .select('id, nombrecompleto, telefono, correo, idusuario')
-        .single();
-
-      if (clientInsert.error || !clientInsert.data) {
-        console.error('[registrar_cliente] cliente error:', clientInsert.error);
-        await supabase.from('usuario').delete().eq('id', createdUser.id);
-        const friendly = translateConstraintError(clientInsert.error?.message);
-        return { ok: false, error: friendly ?? 'No se pudo registrar el cliente.' };
-      }
-
-      const loginResult = await login(p_username, p_password);
-      if (loginResult?.ok) {
-        return loginResult;
-      }
-
-      const fallbackPayload = mapUserPayload({
-        ...createdUser,
-        role: 'cliente',
-        nombre: clientInsert.data.nombrecompleto,
-        nombrecompleto: clientInsert.data.nombrecompleto,
-        cliente: clientInsert.data,
-      }) ?? {
-        ...createdUser,
-        role: 'cliente',
-        name: clientInsert.data.nombrecompleto,
-      };
-
-      if (fallbackPayload) {
-        setUser(fallbackPayload);
-        localStorage.setItem('session_user', JSON.stringify(fallbackPayload));
+      if (normalized) {
+        setUser(normalized);
+        localStorage.setItem('session_user', JSON.stringify(normalized));
       } else {
         setUser(null);
         localStorage.removeItem('session_user');
       }
 
-      return { ok: true, user: fallbackPayload ?? null };
+      return { ok: true, user: normalized ?? null };
     } catch (err) {
+      // si el catch trae “function ... does not exist”, también hacemos fallback
+      const msg = String(err?.message ?? '').toLowerCase();
+      if (msg.includes('does not exist') && msg.includes('registrar_cliente')) {
+        return await manualRegister();
+      }
       console.error('[registrar_cliente] unexpected:', err);
       return { ok: false, error: 'Error de red. Intente nuevamente.' };
     }
@@ -453,3 +423,4 @@ export function AuthProvider({ children }) {
 }
 // eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => useContext(AuthCtx);
+
