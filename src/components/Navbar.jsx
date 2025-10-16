@@ -1,8 +1,8 @@
 import { Link, NavLink } from 'react-router-dom'
-import useAuth from '../lib/useAuth'
+import { useAuth } from '../auth/authContext'
 
 export default function Navbar(){
-  const { user, clearSession } = useAuth()
+  const { user, logout } = useAuth()
 
   const tabs = [
     { to:'/', label:'Inicio' },
@@ -31,34 +31,12 @@ export default function Navbar(){
               </li>
             ))}
             {!user && (
-              <>
-                <li><NavLink to="/login" className="btn btn-ghost">Iniciar sesión</NavLink></li>
-                <li><NavLink to="/register" className="btn btn-primary">Crear cuenta</NavLink></li>
-              </>
+              <li><NavLink to="/login" className="btn btn-ghost">Iniciar sesión</NavLink></li>
             )}
             {user && (
               <>
-                <li>
-                  <NavLink
-                    to={user.rol === 'admin' ? '/admin' : user.rol === 'fotografo' ? '/fotografo' : '/cliente'}
-                    className="btn btn-primary"
-                  >
-                    {user.rol === 'admin'
-                      ? 'Administración'
-                      : user.rol === 'fotografo'
-                        ? 'Panel de fotógrafo'
-                        : 'Mi cuenta'}
-                  </NavLink>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={clearSession}
-                  >
-                    Salir
-                  </button>
-                </li>
+                <li><NavLink to={user.role==='admin' ? '/admin' : '/'} className="btn btn-primary">{user.role==='admin'?'Administración':'Mi cuenta'}</NavLink></li>
+                <li><button className="btn btn-ghost" onClick={logout}>Salir</button></li>
               </>
             )}
           </ul>
