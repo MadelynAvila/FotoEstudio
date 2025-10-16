@@ -1,6 +1,21 @@
 import { Link, NavLink } from 'react-router-dom'
 import { useAuth } from '../auth/authContext'
 
+const normalizeRole = role => {
+  if(!role) return ''
+  return role
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+}
+
+const isAdminRole = role => {
+  const normalized = normalizeRole(role)
+  return ['admin', 'fotografo', 'photographer'].includes(normalized)
+}
+
 export default function Navbar(){
   const { user, logout } = useAuth()
 
@@ -35,7 +50,7 @@ export default function Navbar(){
             )}
             {user && (
               <>
-                <li><NavLink to={user.role==='admin' ? '/admin' : '/'} className="btn btn-primary">{user.role==='admin'?'Administración':'Mi cuenta'}</NavLink></li>
+                <li><NavLink to={isAdminRole(user.role) ? '/admin' : '/'} className="btn btn-primary">{isAdminRole(user.role)?'Administración':'Mi cuenta'}</NavLink></li>
                 <li><button className="btn btn-ghost" onClick={logout}>Salir</button></li>
               </>
             )}
