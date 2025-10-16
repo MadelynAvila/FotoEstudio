@@ -1,11 +1,71 @@
 // authContext.js
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
 const AuthCtx = createContext(null);
 
+const mapUserPayload = (rawUser) => {
+  if (!rawUser || typeof rawUser !== 'object') return null;
+
+  const normalizedUser = { ...rawUser };
+
+  if (!normalizedUser.role) {
+    const roleKeys = [
+      'role',
+      'rol',
+      'tipo',
+      'tipo_usuario',
+      'tipoUsuario',
+      'perfil',
+      'profile',
+      'user_type',
+    ];
+
+    for (const key of roleKeys) {
+      if (rawUser[key]) {
+        normalizedUser.role = rawUser[key];
+        break;
+      }
+    }
+  }
+
+  if (!normalizedUser.name) {
+    const nameKeys = [
+      'name',
+      'nombre',
+      'full_name',
+      'fullname',
+      'usuario',
+      'username',
+    ];
+
+    for (const key of nameKeys) {
+      if (rawUser[key]) {
+        normalizedUser.name = rawUser[key];
+        break;
+      }
+    }
+  }
+
+  return normalizedUser;
+};
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('session_user');
+      if (!stored) return;
+
+      const parsed = JSON.parse(stored);
+      const normalized = mapUserPayload(parsed);
+      setUser(normalized);
+    } catch (err) {
+      console.error('[auth] No se pudo restaurar la sesión:', err);
+      localStorage.removeItem('session_user');
+    }
+  }, []);
 
   const login = async (identifier, password) => {
     const p_login = (identifier ?? '').trim();
@@ -28,10 +88,14 @@ export function AuthProvider({ children }) {
         return { ok: false, error: 'Credenciales inválidas o usuario inactivo.' };
       }
 
-      const u = data[0];
+      const u = mapUserPayload(data[0]);
       setUser(u);
       // Si quieres persistir:
-      localStorage.setItem('session_user', JSON.stringify(u));
+      if (u) {
+        localStorage.setItem('session_user', JSON.stringify(u));
+      } else {
+        localStorage.removeItem('session_user');
+      }
 
       return { ok: true, user: u };
     } catch (err) {
