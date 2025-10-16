@@ -1,24 +1,24 @@
 import { useState, useMemo } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/authContext';
 
 export default function Login() {
   const [identifier, setIdentifier] = useState('');
-  const [password, setPassword]   = useState('');
-  const [error, setError]         = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { login } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
 
-  const canSubmit = useMemo(() => {
+  const canSubmitLogin = useMemo(() => {
     return identifier.trim().length > 0 && password.length > 0 && !isSubmitting;
   }, [identifier, password, isSubmitting]);
 
-  const onSubmit = async (e) => {
+  const onSubmitLogin = async (e) => {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmitLogin) return;
 
     setError('');
     setIsSubmitting(true);
@@ -39,44 +39,57 @@ export default function Login() {
   };
 
   return (
-    <div className="container-1120 py-10 grid place-items-center">
-      <form onSubmit={onSubmit} className="card p-6 w-full max-w-md grid gap-3">
-        <h1 className="text-2xl font-display">Iniciar sesión</h1>
+    <div className="relative min-h-screen bg-gradient-to-br from-sand via-dune to-amber-100">
+      <div className="absolute inset-0 opacity-60 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-amber-300/30 via-transparent to-transparent" />
+      <div className="relative z-10 flex min-h-screen items-center justify-center px-4 py-20">
+        <form onSubmit={onSubmitLogin} className="card w-full max-w-md space-y-6 p-10 shadow-2xl shadow-black/15">
+          <div className="space-y-2 text-center">
+            <h1 className="text-3xl font-display text-umber">Iniciar sesión</h1>
+            <p className="text-sm text-umber/70">Accede con tu usuario o correo electrónico para continuar.</p>
+          </div>
 
-        <label className="grid gap-1">
-          <span className="text-sm font-semibold">Usuario o correo</span>
-          <input
-            className="w-full border rounded-xl2 px-3 py-2"
-            value={identifier}
-            onChange={e => setIdentifier(e.target.value)}
-            placeholder="Ingresa tu usuario o correo"
-            autoComplete="username"
-            inputMode="email"
-          />
-        </label>
+          <label className="grid gap-1 text-sm font-medium text-umber/80">
+            Usuario o correo
+            <input
+              className="w-full rounded-xl2 border border-sand px-3 py-2 shadow-inner focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="Ingresa tu usuario o correo"
+              autoComplete="username"
+              inputMode="email"
+            />
+          </label>
 
-        <label className="grid gap-1">
-          <span className="text-sm font-semibold">Contraseña</span>
-          <input
-            type="password"
-            className="w-full border rounded-xl2 px-3 py-2"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            placeholder="Contraseña"
-            autoComplete="current-password"
-          />
-        </label>
+          <label className="grid gap-1 text-sm font-medium text-umber/80">
+            Contraseña
+            <input
+              type="password"
+              className="w-full rounded-xl2 border border-sand px-3 py-2 shadow-inner focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Contraseña"
+              autoComplete="current-password"
+            />
+          </label>
 
-        {error && <p className="text-red-600 text-sm">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
-        <button className="btn btn-primary" disabled={!canSubmit}>
-          {isSubmitting ? 'Ingresando...' : 'Ingresar'}
-        </button>
+          <button className="btn btn-primary w-full justify-center" disabled={!canSubmitLogin}>
+            {isSubmitting ? 'Ingresando…' : 'Ingresar'}
+          </button>
 
-        <p className="text-xs muted">
-          Puedes usar tu <b>nombre de usuario</b> o tu <b>correo electrónico</b>.
-        </p>
-      </form>
+          <p className="text-xs text-umber/70 text-center">
+            Puedes usar tu <b>nombre de usuario</b> o tu <b>correo electrónico</b>.
+          </p>
+
+          <div className="text-center text-sm text-umber">
+            ¿Aún no tienes cuenta?{' '}
+            <Link to="/registrarse" className="font-semibold text-amber-600 hover:text-amber-500">
+              Registrarse
+            </Link>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
