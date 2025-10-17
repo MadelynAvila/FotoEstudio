@@ -14,9 +14,13 @@ function formatDate(value) {
 
 function formatTime(value) {
   if (!value) return '—'
-  const text = String(value)
-  if (text.length >= 5) return text.slice(0, 5)
-  return text
+  const [horas, minutos] = String(value).split(':')
+  const h = Number(horas)
+  const m = Number(minutos)
+  if (Number.isNaN(h) || Number.isNaN(m)) {
+    return String(value)
+  }
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
 function firstItem(value) {

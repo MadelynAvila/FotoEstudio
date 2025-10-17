@@ -140,19 +140,46 @@ export default function Booking() {
         return
       }
 
-      const ocupado = new Set()
-      (agendas ?? []).forEach(slot => {
-        const inicioAgenda = horaATotalMinutos(slot.horainicio)
-        const finAgenda = horaATotalMinutos(slot.horafin)
-        const reservado = slot.disponible === false
-        if (reservado && inicioAgenda < finCliente && inicioCliente < finAgenda) {
-          ocupado.add(slot.idfotografo)
+      const mapaDisponibilidad = {}
+      const agendasPorFotografo = new Map()
+      const listaAgendas = Array.isArray(agendas) ? agendas : []
+
+      listaAgendas.forEach(slot => {
+        if (!agendasPorFotografo.has(slot.idfotografo)) {
+          agendasPorFotografo.set(slot.idfotografo, [])
         }
+        agendasPorFotografo.get(slot.idfotografo).push(slot)
       })
 
-      const mapaDisponibilidad = {}
-      fotografosList.forEach(f => {
-        mapaDisponibilidad[f.id] = !ocupado.has(f.id)
+      fotografosList.forEach(fotografo => {
+        const slots = agendasPorFotografo.get(fotografo.id) ?? []
+        if (!slots.length) {
+          mapaDisponibilidad[fotografo.id] = false
+          return
+        }
+
+        const tieneHorarioDisponible = slots.some(slot => {
+          if (slot.disponible !== true) return false
+          const inicioAgenda = horaATotalMinutos(slot.horainicio)
+          const finAgenda = horaATotalMinutos(slot.horafin)
+          if (inicioAgenda === null || finAgenda === null) return false
+          return inicioAgenda <= inicioCliente && finCliente <= finAgenda
+        })
+
+        if (!tieneHorarioDisponible) {
+          mapaDisponibilidad[fotografo.id] = false
+          return
+        }
+
+        const tieneConflictos = slots.some(slot => {
+          if (slot.disponible !== false) return false
+          const inicioAgenda = horaATotalMinutos(slot.horainicio)
+          const finAgenda = horaATotalMinutos(slot.horafin)
+          if (inicioAgenda === null || finAgenda === null) return false
+          return inicioAgenda < finCliente && inicioCliente < finAgenda
+        })
+
+        mapaDisponibilidad[fotografo.id] = !tieneConflictos
       })
 
       setDisponibilidadFotografos(mapaDisponibilidad)
@@ -336,6 +363,7 @@ export default function Booking() {
     ? fotografosList.find(f => String(f.id) === String(form.fotografoId))
     : null
   const totalDisponibles = Object.values(disponibilidadFotografos).filter(Boolean).length
+  const fotografosDisponibles = fotografosList.filter(f => disponibilidadFotografos[f.id])
 
   let mensajeFotografo = ''
   let estadoFotografo = 'neutral'
@@ -410,6 +438,13 @@ export default function Booking() {
         <div className={`rounded-xl2 border px-3 py-2 text-sm ${fotografoMessageClass}`}>
           <span className={fotografoLabelClass}>Fotógrafo</span>
           <span>{mensajeFotografo}</span>
+          {estadoFotografo === 'success' && fotografosDisponibles.length > 0 ? (
+            <ul className="mt-2 list-disc list-inside space-y-1 text-xs text-slate-600">
+              {fotografosDisponibles.map(fotografo => (
+                <li key={fotografo.id}>{fotografo.username}</li>
+              ))}
+            </ul>
+          ) : null}
         </div>
 
         <button className="btn btn-primary" disabled={!user || enviando}>
