@@ -289,6 +289,7 @@ export default function AdminReservations(){
           idagenda: agendaData.id,
           idpaquete: Number(form.paqueteId),
           estado_pago: formatEstado(form.estado),
+
           nombre_actividad: nombreActividad,
           ubicacion: form.ubicacion
         }
