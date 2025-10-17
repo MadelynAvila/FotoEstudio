@@ -1,6 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import {
+  getActividadesFotografo,
+  getAgendaFotografo,
+  getFotografos,
+  getResenasFotografo
+} from '../lib/fotografos'
 import AdminHelpCard from '../components/AdminHelpCard'
+import PhotographerDetails from '../components/PhotographerDetails'
 
 const ESTADOS = ['activo', 'inactivo']
 const defaultForm = { id: null, nombrecompleto: '', telefono: '', correo: '', especialidad: '', estado: 'activo' }
@@ -26,7 +33,7 @@ function serializeTelefono({ telefono, especialidad }) {
   return JSON.stringify({ telefono: telefono || '', especialidad: especialidad || '' })
 }
 
-export default function AdminPhotographers(){
+export default function AdminPhotographers() {
   const [fotografos, setFotografos] = useState([])
   const [form, setForm] = useState(defaultForm)
   const [loading, setLoading] = useState(true)
@@ -34,53 +41,57 @@ export default function AdminPhotographers(){
   const [feedback, setFeedback] = useState({ type: '', message: '' })
   const [rolFotografoId, setRolFotografoId] = useState(null)
   const [estadosUsuario, setEstadosUsuario] = useState([])
+  const [selectedFotografoId, setSelectedFotografoId] = useState(null)
+  const [detallesFotografo, setDetallesFotografo] = useState({ agenda: [], actividades: [], resenas: [], promedio: null })
+  const [loadingDetalles, setLoadingDetalles] = useState(false)
+  const [detallesError, setDetallesError] = useState('')
 
-  const fetchConfiguracion = async () => {
-    const [{ data: roles, error: rolesError }, { data: estados, error: estadosError }] = await Promise.all([
-      supabase.from('rol').select('id, nombre'),
-      supabase.from('estado_usuario').select('id, nombre_estado')
-    ])
+  const selectedFotografo = useMemo(
+    () => fotografos.find(item => item.id === selectedFotografoId) || null,
+    [fotografos, selectedFotografoId]
+  )
 
-    if (rolesError) {
-      console.error('No se pudo obtener el rol de fotógrafo', rolesError)
+  const fetchEstadosUsuario = useCallback(async () => {
+    const { data, error } = await supabase.from('estado_usuario').select('id, nombre_estado')
+
+    if (error) {
+      console.error('No se pudieron obtener los estados de usuario', error)
     }
-    if (estadosError) {
-      console.error('No se pudieron obtener los estados de usuario', estadosError)
-    }
 
-    const rolFotografo = roles?.find(item => item.nombre?.toLowerCase() === 'fotografo' || item.nombre?.toLowerCase() === 'fotógrafo')
-    const rolId = rolFotografo?.id ?? null
-    setRolFotografoId(rolId)
-    if (!rolId) {
-      setFotografos([])
-      setLoading(false)
-    }
-    setEstadosUsuario(estados ?? [])
-  }
+    setEstadosUsuario(data ?? [])
+  }, [])
 
-  const fetchFotografos = async () => {
-    if (!rolFotografoId) {
+  const fetchFotografos = useCallback(async () => {
+    setLoading(true)
+    const response = await getFotografos()
+
+    if (response.rolesError) {
+      console.error('No se pudo obtener el rol de fotógrafo', response.rolesError)
+      setFeedback({ type: 'error', message: 'No pudimos obtener la configuración del rol de fotógrafo.' })
       setFotografos([])
       setLoading(false)
       return
     }
 
-    setLoading(true)
-    const { data, error } = await supabase
-      .from('usuario')
-      .select('id, username, correo, telefono, idRol, idestado, estado:estado_usuario!usuario_idestado_fkey ( id, nombre_estado )')
-      .eq('idRol', rolFotografoId)
-      .order('username', { ascending: true })
+    if (response.rolId) {
+      setRolFotografoId(response.rolId)
+    } else {
+      setRolFotografoId(null)
+      setFotografos([])
+      setFeedback({ type: 'error', message: 'Configura el rol "Fotógrafo" antes de registrar integrantes del equipo.' })
+      setLoading(false)
+      return
+    }
 
-    if (error) {
-      console.error('No se pudieron cargar los fotógrafos', error)
+    if (response.error) {
+      console.error('No se pudieron cargar los fotógrafos', response.error)
       setFotografos([])
       setFeedback({ type: 'error', message: 'No pudimos cargar los fotógrafos.' })
       setLoading(false)
       return
     }
 
-    const formatted = (data ?? []).map(item => {
+    const formatted = (response.data ?? []).map(item => {
       const info = parseTelefono(item.telefono)
       return {
         id: item.id,
@@ -95,23 +106,81 @@ export default function AdminPhotographers(){
     setFotografos(formatted)
     setFeedback({ type: '', message: '' })
     setLoading(false)
-  }
-
-  useEffect(() => {
-    fetchConfiguracion()
   }, [])
 
   useEffect(() => {
-    if (rolFotografoId) {
-      fetchFotografos()
+    fetchEstadosUsuario()
+    fetchFotografos()
+  }, [fetchEstadosUsuario, fetchFotografos])
+
+  useEffect(() => {
+    if (!selectedFotografoId) {
+      setDetallesFotografo({ agenda: [], actividades: [], resenas: [], promedio: null })
+      setDetallesError('')
+      setLoadingDetalles(false)
+      return
     }
-  }, [rolFotografoId])
+
+    let active = true
+    setLoadingDetalles(true)
+    setDetallesError('')
+    setDetallesFotografo({ agenda: [], actividades: [], resenas: [], promedio: null })
+
+    const cargarDetalles = async () => {
+      const [agendaRes, actividadesRes, resenasRes] = await Promise.all([
+        getAgendaFotografo(selectedFotografoId),
+        getActividadesFotografo(selectedFotografoId),
+        getResenasFotografo(selectedFotografoId)
+      ])
+
+      if (!active) return
+
+      const errores = []
+      if (agendaRes.error) {
+        console.error('No se pudo obtener la agenda del fotógrafo', agendaRes.error)
+        errores.push('la agenda')
+      }
+      if (actividadesRes.error) {
+        console.error('No se pudieron obtener las actividades del fotógrafo', actividadesRes.error)
+        errores.push('las actividades')
+      }
+      if (resenasRes.error) {
+        console.error('No se pudieron obtener las reseñas del fotógrafo', resenasRes.error)
+        errores.push('las reseñas')
+      }
+
+      setDetallesFotografo({
+        agenda: agendaRes.data ?? [],
+        actividades: actividadesRes.data ?? [],
+        resenas: resenasRes.data ?? [],
+        promedio: resenasRes.promedio
+      })
+
+      if (errores.length) {
+        setDetallesError(`No pudimos cargar ${errores.join(', ')} del fotógrafo seleccionado.`)
+      }
+
+      setLoadingDetalles(false)
+    }
+
+    cargarDetalles()
+
+    return () => {
+      active = false
+    }
+  }, [selectedFotografoId])
 
   const updateField = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
   const resetForm = () => setForm(defaultForm)
+
+  const clearSelection = () => {
+    setSelectedFotografoId(null)
+    setDetallesFotografo({ agenda: [], actividades: [], resenas: [], promedio: null })
+    setDetallesError('')
+  }
 
   const estadoIdFromNombre = (nombre) => {
     const match = estadosUsuario.find(estado => estado.nombre_estado?.toLowerCase() === nombre)
@@ -189,7 +258,13 @@ export default function AdminPhotographers(){
     } else {
       setFotografos(prev => prev.filter(item => item.id !== id))
       if (form.id === id) resetForm()
+      if (selectedFotografoId === id) clearSelection()
     }
+  }
+
+  const onViewDetails = (fotografo) => {
+    if (!fotografo?.id) return
+    setSelectedFotografoId(fotografo.id)
   }
 
   return (
@@ -275,45 +350,64 @@ export default function AdminPhotographers(){
         </div>
       </div>
 
-      <div className="card p-5">
-        <h2 className="text-lg font-semibold text-umber mb-3">Fotógrafos registrados</h2>
-        {loading ? (
-          <p className="muted text-sm">Cargando fotógrafos…</p>
-        ) : fotografos.length ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-sand text-left uppercase text-xs tracking-wide text-slate-600">
-                <tr>
-                  <th className="p-2">Nombre</th>
-                  <th className="p-2">Teléfono</th>
-                  <th className="p-2">Correo</th>
-                  <th className="p-2">Especialidad</th>
-                  <th className="p-2">Estado</th>
-                  <th className="p-2 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {fotografos.map(fotografo => (
-                  <tr key={fotografo.id} className="border-b last:border-0">
-                    <td className="p-2 font-medium text-slate-700">{fotografo.nombrecompleto}</td>
-                    <td className="p-2">{fotografo.telefono || '—'}</td>
-                    <td className="p-2">{fotografo.correo || '—'}</td>
-                    <td className="p-2">{fotografo.especialidad || '—'}</td>
-                    <td className="p-2">{fotografo.estado === 'activo' ? 'Activo' : 'Inactivo'}</td>
-                    <td className="p-2">
-                      <div className="flex justify-end gap-2">
-                        <button type="button" className="btn btn-ghost" onClick={() => onEdit(fotografo)}>Editar</button>
-                        <button type="button" className="btn btn-ghost" onClick={() => onDelete(fotografo.id)}>Eliminar</button>
-                      </div>
-                    </td>
+      <div className="space-y-6">
+        <div className="card p-5">
+          <h2 className="text-lg font-semibold text-umber mb-3">Fotógrafos registrados</h2>
+          {loading ? (
+            <p className="muted text-sm">Cargando fotógrafos…</p>
+          ) : fotografos.length ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-sand text-left uppercase text-xs tracking-wide text-slate-600">
+                  <tr>
+                    <th className="p-2">Nombre</th>
+                    <th className="p-2">Teléfono</th>
+                    <th className="p-2">Correo</th>
+                    <th className="p-2">Especialidad</th>
+                    <th className="p-2">Estado</th>
+                    <th className="p-2 text-right">Acciones</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="muted text-sm">Todavía no hay fotógrafos registrados.</p>
-        )}
+                </thead>
+                <tbody>
+                  {fotografos.map(fotografo => (
+                    <tr
+                      key={fotografo.id}
+                      className={`border-b last:border-0 ${selectedFotografoId === fotografo.id ? 'bg-sand/60' : ''}`}
+                    >
+                      <td className="p-2 font-medium text-slate-700">{fotografo.nombrecompleto}</td>
+                      <td className="p-2">{fotografo.telefono || '—'}</td>
+                      <td className="p-2">{fotografo.correo || '—'}</td>
+                      <td className="p-2">{fotografo.especialidad || '—'}</td>
+                      <td className="p-2">{fotografo.estado === 'activo' ? 'Activo' : 'Inactivo'}</td>
+                      <td className="p-2">
+                        <div className="flex justify-end gap-2">
+                          <button type="button" className="btn btn-ghost" onClick={() => onViewDetails(fotografo)}>
+                            Ver detalles
+                          </button>
+                          <button type="button" className="btn btn-ghost" onClick={() => onEdit(fotografo)}>Editar</button>
+                          <button type="button" className="btn btn-ghost" onClick={() => onDelete(fotografo.id)}>Eliminar</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="muted text-sm">Todavía no hay fotógrafos registrados.</p>
+          )}
+        </div>
+
+        <PhotographerDetails
+          fotografo={selectedFotografo}
+          agenda={detallesFotografo.agenda}
+          actividades={detallesFotografo.actividades}
+          resenas={detallesFotografo.resenas}
+          promedio={detallesFotografo.promedio}
+          loading={loadingDetalles}
+          error={detallesError}
+          onClose={clearSelection}
+        />
       </div>
     </div>
   )
