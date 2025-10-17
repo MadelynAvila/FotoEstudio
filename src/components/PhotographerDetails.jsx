@@ -90,10 +90,6 @@ export default function PhotographerDetails({
               <p className="font-medium text-slate-700">{fotografo.telefono || '—'}</p>
             </div>
             <div>
-              <span className="muted text-xs uppercase">Especialidad</span>
-              <p className="font-medium text-slate-700">{fotografo.especialidad || '—'}</p>
-            </div>
-            <div>
               <span className="muted text-xs uppercase">Estado</span>
               <p className="font-medium text-slate-700">{fotografo.estado === 'inactivo' ? 'Inactivo' : 'Activo'}</p>
             </div>
