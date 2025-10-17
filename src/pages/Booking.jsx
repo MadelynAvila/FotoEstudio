@@ -61,7 +61,7 @@ export default function Booking(){
           {
             username: form.nombre,
             telefono: form.telefono || null,
-            idRol: rolCliente?.id ?? null
+            idrol: rolCliente?.id ?? null
           }
         ])
         .select('id')
@@ -93,7 +93,7 @@ export default function Booking(){
       const { data: fotografoData, error: fotografoError } = await supabase
         .from('usuario')
         .select('id')
-        .eq('idRol', rolFotografo?.id ?? -1)
+        .eq('idrol', rolFotografo?.id ?? -1)
         .limit(1)
         .single()
 

@@ -187,7 +187,7 @@ export default function AdminClients(){
             username: form.nombrecompleto,
             telefono: form.telefono || null,
             correo: form.correo || null,
-            idRol: rolClienteId
+            idrol: rolClienteId
           }
         ])
         .select('id')

@@ -128,7 +128,7 @@ export default function AdminReservations(){
         {
           username: form.nombre,
           telefono: form.telefono || null,
-          idRol: rolClienteId
+          idrol: rolClienteId
         }
       ])
       .select('id')
@@ -152,7 +152,7 @@ export default function AdminReservations(){
     const { data: fotografoData } = await supabase
       .from('usuario')
       .select('id')
-      .eq('idRol', rolFotografoId)
+      .eq('idrol', rolFotografoId)
       .limit(1)
       .maybeSingle()
 

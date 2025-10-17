@@ -39,11 +39,11 @@ export async function getFotografos() {
       username,
       correo,
       telefono,
-      idRol,
+      idrol,
       idestado,
       estado:estado_usuario ( id, nombre_estado )
     `)
-    .eq('idRol', rolFotografo.id)
+    .eq('idrol', rolFotografo.id)
     .order('username', { ascending: true })
 
   return {

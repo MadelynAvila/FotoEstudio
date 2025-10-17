@@ -209,7 +209,7 @@ export default function AdminPhotographers() {
       username: form.nombrecompleto,
       telefono: telefonoSerializado,
       correo: form.correo || null,
-      idRol: rolFotografoId,
+      idrol: rolFotografoId,
       idestado: estadoId
     }
 
