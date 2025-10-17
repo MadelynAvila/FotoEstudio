@@ -297,8 +297,16 @@ export default function Booking() {
 
     const { nombre, telefono, correo, paqueteId, fecha, horaInicio, horaFin, ubicacion, formaPago, fotografoId } = form
 
+    const fechaSeleccionada = normalizarFechaInput(fecha)
+    const rangoDiaSeleccionado = obtenerRangoDiaUTC(fechaSeleccionada)
+
     if (!nombre || !telefono || !correo || !paqueteId || !fecha || !horaInicio || !horaFin || !ubicacion || !formaPago) {
       setError('Por favor completa todos los campos antes de enviar la reserva.')
+      return
+    }
+
+    if (!fechaSeleccionada || !rangoDiaSeleccionado) {
+      setError('Selecciona una fecha válida para continuar con la reserva.')
       return
     }
 
@@ -373,9 +381,22 @@ export default function Booking() {
       }
 
       const fechaAgenda = normalizarFechaInput(agendaSeleccionada.fecha)
-      if (fechaAgenda !== fecha) {
+      if (fechaAgenda !== fechaSeleccionada) {
         setError('El horario seleccionado no coincide con la fecha indicada. Actualiza la información e inténtalo de nuevo.')
         return
+      }
+
+      if (typeof agendaSeleccionada.fecha === 'string') {
+        const fechaAgendaISO = new Date(agendaSeleccionada.fecha)
+        if (!Number.isNaN(fechaAgendaISO.getTime())) {
+          if (
+            fechaAgendaISO.toISOString() < rangoDiaSeleccionado.inicio ||
+            fechaAgendaISO.toISOString() >= rangoDiaSeleccionado.fin
+          ) {
+            setError('La agenda seleccionada no corresponde al día elegido. Vuelve a consultar la disponibilidad.')
+            return
+          }
+        }
       }
 
       if (Number(agendaSeleccionada.idfotografo) !== Number(fotografoId)) {
