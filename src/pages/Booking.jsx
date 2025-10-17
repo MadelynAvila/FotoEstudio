@@ -161,6 +161,7 @@ export default function Booking() {
     evaluarDisponibilidad()
   }, [form.fecha, form.horaInicio, form.horaFin, fotografosList])
 
+  // Actualizar fotógrafo automáticamente si hay disponible
   useEffect(() => {
     setForm(prev => {
       if (fotografosList.length === 0) {
@@ -221,7 +222,6 @@ export default function Booking() {
     try {
       setEnviando(true)
 
-      // Validar cliente
       const { data: clienteExistente, error: clienteSelectError } = await supabase
         .from('cliente')
         .select('idcliente')
@@ -252,18 +252,11 @@ export default function Booking() {
         clienteId = nuevoCliente.idcliente
       }
 
-      // Validar conflicto en agenda
-      const { data: agendaExistente, error: agendaExistenteError } = await supabase
+      const { data: agendaExistente } = await supabase
         .from('agenda')
         .select('id, horainicio, horafin, disponible')
         .eq('fecha', fecha)
         .eq('idfotografo', Number(fotografoId))
-
-      if (agendaExistenteError) {
-        console.error('Error verificando disponibilidad del fotógrafo', agendaExistenteError)
-        setError('No pudimos confirmar la disponibilidad del fotógrafo.')
-        return
-      }
 
       const hayConflicto = (agendaExistente ?? []).some(slot => {
         if (slot.disponible === false) {
@@ -279,8 +272,7 @@ export default function Booking() {
         return
       }
 
-      // Crear agenda
-      const { data: agendaData, error: agendaError } = await supabase
+      const { data: agendaData } = await supabase
         .from('agenda')
         .insert([
           {
@@ -294,19 +286,12 @@ export default function Booking() {
         .select('id')
         .single()
 
-      if (agendaError || !agendaData) {
-        console.error('Error creando agenda', agendaError)
-        setError('No se pudo registrar la agenda.')
-        return
-      }
-
       const paqueteSeleccionado = paquetes.find(p => String(p.id) === String(paqueteId))
       const nombreActividad = paqueteSeleccionado
         ? `${paqueteSeleccionado.nombre_paquete} - ${nombre}`
         : nombre
 
-      // Crear actividad
-      const { data: actividadData, error: actividadError } = await supabase
+      const { data: actividadData } = await supabase
         .from('actividad')
         .insert([
           {
@@ -321,32 +306,17 @@ export default function Booking() {
         .select('id')
         .single()
 
-      if (actividadError || !actividadData) {
-        console.error('Error creando actividad', actividadError)
-        setError('No se pudo registrar la actividad.')
-        return
-      }
-
-      // Registrar pago pendiente
       const montoReserva = paqueteSeleccionado?.precio ?? 0
-      const { error: pagoError } = await supabase
-        .from('pago')
-        .insert([
-          {
-            idactividad: actividadData.id,
-            metodo_pago: formaPago,
-            monto: montoReserva,
-            detalle_pago: 'Pago pendiente registrado desde el panel web'
-          }
-        ])
+      await supabase.from('pago').insert([
+        {
+          idactividad: actividadData.id,
+          metodo_pago: formaPago,
+          monto: montoReserva,
+          detalle_pago: 'Pago pendiente registrado desde el panel web'
+        }
+      ])
 
-      if (pagoError) {
-        console.error('Error al registrar el pago', pagoError)
-        setMensaje('Reserva enviada con éxito, pero no se pudo registrar el pago.')
-      } else {
-        setMensaje('Reserva enviada con éxito ✅')
-      }
-
+      setMensaje('Reserva enviada con éxito ✅')
       setForm({
         ...initialForm,
         nombre,
@@ -358,74 +328,35 @@ export default function Booking() {
     }
   }
 
+  // Estado de mensaje dinámico del fotógrafo
   const hayFotografosRegistrados = fotografosList.length > 0
   const horarioCompleto = Boolean(form.fecha && form.horaInicio && form.horaFin)
-  const hayDisponibilidadCalculada = useMemo(
-    () => Object.keys(disponibilidadFotografos).length > 0,
-    [disponibilidadFotografos]
-  )
-  const totalDisponibles = useMemo(
-    () => Object.values(disponibilidadFotografos).filter(Boolean).length,
-    [disponibilidadFotografos]
-  )
-  const fotografoAsignado = useMemo(
-    () =>
-      form.fotografoId
-        ? fotografosList.find(f => String(f.id) === String(form.fotografoId))
-        : null,
-    [form.fotografoId, fotografosList]
-  )
+  const hayDisponibilidadCalculada = Object.keys(disponibilidadFotografos).length > 0
+  const fotografoAsignado = form.fotografoId
+    ? fotografosList.find(f => String(f.id) === String(form.fotografoId))
+    : null
+  const totalDisponibles = Object.values(disponibilidadFotografos).filter(Boolean).length
 
-  const { mensajeFotografo, estadoFotografo } = useMemo(() => {
-    if (!hayFotografosRegistrados) {
-      return {
-        mensajeFotografo:
-          'No hay fotógrafos registrados actualmente. Comunícate con el estudio para más información.',
-        estadoFotografo: 'alert'
-      }
-    }
+  let mensajeFotografo = ''
+  let estadoFotografo = 'neutral'
 
-    if (!horarioCompleto) {
-      return {
-        mensajeFotografo: 'Selecciona una fecha y un horario para revisar la disponibilidad.',
-        estadoFotografo: 'neutral'
-      }
-    }
-
-    if (!hayDisponibilidadCalculada) {
-      return {
-        mensajeFotografo: 'Consultando disponibilidad…',
-        estadoFotografo: 'neutral'
-      }
-    }
-
-    if (fotografoAsignado) {
-      return {
-        mensajeFotografo: `Fotógrafo disponible: ${fotografoAsignado.username}. Se asignará automáticamente a tu reserva.`,
-        estadoFotografo: 'success'
-      }
-    }
-
-    if (totalDisponibles > 0) {
-      return {
-        mensajeFotografo:
-          'Hay fotógrafos disponibles para el horario seleccionado. Completa el formulario para continuar con la reserva.',
-        estadoFotografo: 'success'
-      }
-    }
-
-    return {
-      mensajeFotografo:
-        'No hay fotógrafos disponibles para el horario seleccionado. Elige otro horario o contacta al estudio.',
-      estadoFotografo: 'alert'
-    }
-  }, [
-    fotografoAsignado,
-    hayDisponibilidadCalculada,
-    hayFotografosRegistrados,
-    horarioCompleto,
-    totalDisponibles
-  ])
+  if (!hayFotografosRegistrados) {
+    mensajeFotografo = 'No hay fotógrafos registrados actualmente. Comunícate con el estudio para más información.'
+    estadoFotografo = 'alert'
+  } else if (!horarioCompleto) {
+    mensajeFotografo = 'Selecciona una fecha y un horario para revisar la disponibilidad.'
+  } else if (!hayDisponibilidadCalculada) {
+    mensajeFotografo = 'Consultando disponibilidad…'
+  } else if (fotografoAsignado) {
+    mensajeFotografo = `Fotógrafo disponible: ${fotografoAsignado.username}. Se asignará automáticamente a tu reserva.`
+    estadoFotografo = 'success'
+  } else if (hayDisponibilidadCalculada && totalDisponibles > 0) {
+    mensajeFotografo = 'Hay fotógrafos disponibles para el horario seleccionado. Completa el formulario para continuar con la reserva.'
+    estadoFotografo = 'success'
+  } else {
+    mensajeFotografo = 'No hay fotógrafos disponibles para el horario seleccionado. Elige otro horario o contacta al estudio.'
+    estadoFotografo = 'alert'
+  }
 
   const fotografoMessageClass = estadoFotografo === 'success'
     ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
@@ -491,4 +422,5 @@ export default function Booking() {
     </div>
   )
 }
+
 
