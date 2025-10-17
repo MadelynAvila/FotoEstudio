@@ -167,7 +167,7 @@ export default function Booking() {
         return
       }
 
-      const fechaSeleccionada = form.fecha
+      const fechaSeleccionada = normalizarFechaInput(form.fecha)
       const rangoDia = obtenerRangoDiaUTC(fechaSeleccionada)
 
       if (!rangoDia) {
@@ -176,9 +176,18 @@ export default function Booking() {
         return
       }
 
+      const idsFotografos = fotografosList.map(fotografo => fotografo.id)
+
+      if (!idsFotografos.length) {
+        setDisponibilidadFotografos({})
+        setAgendaDisponiblePorFotografo({})
+        return
+      }
+
       const consultaAgenda = supabase
         .from('agenda')
         .select('id, idfotografo, fecha, horainicio, horafin, disponible')
+        .in('idfotografo', idsFotografos)
         .gte('fecha', rangoDia.inicio)
         .lt('fecha', rangoDia.fin)
 
@@ -392,6 +401,23 @@ export default function Booking() {
         return
       }
 
+      const { data: actividadExistente, error: actividadExistenteError } = await supabase
+        .from('actividad')
+        .select('id')
+        .eq('idagenda', agendaSeleccionada.id)
+        .maybeSingle()
+
+      if (actividadExistenteError) {
+        console.error('No se pudo validar si la agenda tiene una actividad asociada', actividadExistenteError)
+        setError('No se pudo validar la disponibilidad actualizada. Intenta nuevamente en unos segundos.')
+        return
+      }
+
+      if (actividadExistente) {
+        setError('El horario ya está reservado y pendiente de confirmación. Elige otra franja horaria.')
+        return
+      }
+
       const { error: agendaUpdateError } = await supabase
         .from('agenda')
         .update({ disponible: false })
@@ -409,7 +435,7 @@ export default function Booking() {
         ? `${paqueteSeleccionado.nombre_paquete} - ${nombre}`
         : nombre
 
-      const { data: actividadData } = await supabase
+      const { data: actividadData, error: crearActividadError } = await supabase
         .from('actividad')
         .insert([
           {
@@ -424,8 +450,19 @@ export default function Booking() {
         .select('id')
         .single()
 
+      if (crearActividadError || !actividadData) {
+        console.error('No se pudo registrar la actividad', crearActividadError)
+        await supabase
+          .from('agenda')
+          .update({ disponible: true })
+          .eq('id', agendaSeleccionada.id)
+          .eq('idfotografo', Number(fotografoId))
+        setError('No se pudo completar la reserva. El horario se liberó para que puedas intentarlo nuevamente.')
+        return
+      }
+
       const montoReserva = paqueteSeleccionado?.precio ?? 0
-      await supabase.from('pago').insert([
+      const { error: crearPagoError } = await supabase.from('pago').insert([
         {
           idactividad: actividadData.id,
           metodo_pago: formaPago,
@@ -433,6 +470,21 @@ export default function Booking() {
           detalle_pago: 'Pago pendiente registrado desde el panel web'
         }
       ])
+
+      if (crearPagoError) {
+        console.error('No se pudo registrar el pago pendiente', crearPagoError)
+        await supabase
+          .from('actividad')
+          .delete()
+          .eq('id', actividadData.id)
+        await supabase
+          .from('agenda')
+          .update({ disponible: true })
+          .eq('id', agendaSeleccionada.id)
+          .eq('idfotografo', Number(fotografoId))
+        setError('El pago pendiente no se pudo registrar. El horario vuelve a estar disponible mientras solucionamos el inconveniente.')
+        return
+      }
 
       setMensaje('Reserva enviada con éxito ✅')
       setForm({
