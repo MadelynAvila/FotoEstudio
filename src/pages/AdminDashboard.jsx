@@ -35,6 +35,19 @@ export default function AdminDashboard(){
   useEffect(() => {
     let active = true
 
+    const fetchServicios = async () => {
+      const response = await supabase.from('servicio').select('id')
+      if (response.error?.code === '42P01') {
+        console.warn(
+          '[Dashboard] La tabla "servicio" no está disponible. Se usará "tipo_evento" como respaldo.',
+          response.error
+        )
+        const fallback = await supabase.from('tipo_evento').select('id')
+        return { ...fallback, _source: 'tipo_evento' }
+      }
+      return { ...response, _source: 'servicio' }
+    }
+
     const load = async () => {
       setLoading(true)
       setError('')
@@ -42,10 +55,7 @@ export default function AdminDashboard(){
       const [
         actividadesRes,
         pagosRes,
-        clientesRes,
         usuariosRes,
-        rolesRes,
-        eventosRes,
         paquetesRes,
         resenasRes
       ] = await Promise.all([
@@ -63,39 +73,46 @@ export default function AdminDashboard(){
           `)
           .order('id', { ascending: false }),
         supabase.from('pago').select('id, idactividad'),
-        supabase.from('cliente').select('idcliente'),
-        supabase.from('usuario').select('id, idRol'),
-        supabase.from('rol').select('id, nombre'),
-        supabase.from('tipo_evento').select('id'),
+        supabase.from('usuario').select('id, idrol, rol:rol ( id, nombre )'),
         supabase.from('paquete').select('id'),
         supabase.from('resena').select('id')
       ])
 
+      const serviciosResponse = await fetchServicios()
+
       if (!active) return
 
-      const errors = [
-        actividadesRes.error,
-        pagosRes.error,
-        clientesRes.error,
-        usuariosRes.error,
-        rolesRes.error,
-        eventosRes.error,
-        paquetesRes.error,
-        resenasRes.error
-      ].filter(Boolean)
+      const errorEntries = []
 
-      if (errors.length) {
-        errors.forEach(err => console.error('Error al cargar el dashboard', err))
-        setError('No pudimos obtener la información del panel. Revisa tu configuración de Supabase o intenta nuevamente.')
-        setStats(defaultStats)
-        setReservas([])
-        setProximas([])
-        setLoading(false)
-        return
+      const trackError = (tableName, error) => {
+        if (!error) return
+        const code = error.code || ''
+        if (code === 'PGRST116') {
+          console.warn(
+            `[Dashboard] Acceso restringido al leer "${tableName}". Verifica las políticas de Row Level Security.`,
+            error
+          )
+        } else if (code === 'PGRST404' || code === '42P01') {
+          console.warn(`[Dashboard] La tabla "${tableName}" no está disponible en Supabase.`, error)
+        } else {
+          console.error(`[Dashboard] Error al cargar datos de "${tableName}".`, error)
+        }
+        errorEntries.push({ table: tableName, error })
       }
+
+      trackError('actividad', actividadesRes.error)
+      trackError('pago', pagosRes.error)
+      trackError('usuario', usuariosRes.error)
+      trackError(serviciosResponse._source || 'servicio', serviciosResponse.error)
+      trackError('paquete', paquetesRes.error)
+      trackError('resena', resenasRes.error)
 
       const actividades = actividadesRes.data ?? []
       const pagos = pagosRes.data ?? []
+      const usuarios = usuariosRes.data ?? []
+      const paquetes = paquetesRes.data ?? []
+      const resenas = resenasRes.data ?? []
+      const servicios = serviciosResponse.data ?? []
       const pagosPorActividad = pagos.reduce((acc, pago) => {
         if (!pago?.idactividad) return acc
         acc.add(Number(pago.idactividad))
@@ -140,22 +157,27 @@ export default function AdminDashboard(){
 
       setReservas(sortedByFechaDesc.slice(0, 5))
       setProximas(upcoming.slice(0, 5))
-      const roles = rolesRes.data ?? []
-      const usuarios = usuariosRes.data ?? []
-      const rolFotografo = roles.find(rol => rol.nombre?.toLowerCase() === 'fotografo' || rol.nombre?.toLowerCase() === 'fotógrafo')
-      const fotografos = usuarios.filter(usuario => rolFotografo && Number(usuario.idRol) === Number(rolFotografo.id))
+
+      const normalizarRol = (rolNombre = '') =>
+        rolNombre
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase()
+      const clientesActivos = usuarios.filter(usuario => normalizarRol(usuario.rol?.nombre) === 'cliente')
+      const fotografos = usuarios.filter(usuario => normalizarRol(usuario.rol?.nombre) === 'fotografo')
 
       setStats({
         reservas: actividades.length,
         pendientes: formatted.filter(item => item.estado === 'pendiente').length,
         pagos: pagos.length,
-        clientes: clientesRes.data?.length ?? 0,
+        clientes: clientesActivos.length,
         fotografos: fotografos.length,
-        servicios: eventosRes.data?.length ?? 0,
-        paquetes: paquetesRes.data?.length ?? 0,
-        resenas: resenasRes.data?.length ?? 0
+        servicios: servicios.length,
+        paquetes: paquetes.length,
+        resenas: resenas.length
       })
 
+      setError(errorEntries.length ? 'Algunas métricas no se pudieron cargar. Revisa la consola para más detalles.' : '')
       setLoading(false)
     }
 
