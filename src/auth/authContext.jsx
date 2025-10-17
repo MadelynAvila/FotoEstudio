@@ -2,49 +2,84 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
-const BCRYPT_BASE64_CHARS = './ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+const LOCAL_HASH_PREFIX = 'pbkdf2-sha256';
+const LOCAL_HASH_ITERATIONS = 310_000;
+const LOCAL_HASH_KEY_LENGTH = 32; // 256 bits
+const LOCAL_SALT_LENGTH = 16;
+const textEncoder = new TextEncoder();
 
-const encodeBcryptBase64 = (bytes) => {
-  let result = '';
-  let offset = 0;
-  const len = bytes.length;
-  while (offset < len) {
-    let c1 = bytes[offset++];
-    result += BCRYPT_BASE64_CHARS[(c1 >> 2) & 0x3f];
-    c1 = (c1 & 0x03) << 4;
-    if (offset >= len) {
-      result += BCRYPT_BASE64_CHARS[c1 & 0x3f];
-      break;
-    }
-
-    let c2 = bytes[offset++];
-    c1 |= (c2 >> 4) & 0x0f;
-    result += BCRYPT_BASE64_CHARS[c1 & 0x3f];
-    c1 = (c2 & 0x0f) << 2;
-
-    if (offset >= len) {
-      result += BCRYPT_BASE64_CHARS[c1 & 0x3f];
-      break;
-    }
-
-    c2 = bytes[offset++];
-    c1 |= (c2 >> 6) & 0x03;
-    result += BCRYPT_BASE64_CHARS[c1 & 0x3f];
-    result += BCRYPT_BASE64_CHARS[c2 & 0x3f];
+const getCrypto = () => {
+  const crypto = globalThis.crypto ?? null;
+  if (!crypto || typeof crypto.getRandomValues !== 'function' || !crypto.subtle) {
+    throw new Error('Criptografía web no disponible en este entorno.');
   }
-  return result;
+  return crypto;
 };
 
-const generateLocalBcryptSalt = (cost = 10) => {
-  const normalizedCost = Math.min(Math.max(cost, 4), 31);
-  const target = new Uint8Array(16);
-  if (typeof globalThis.crypto?.getRandomValues === 'function') {
-    globalThis.crypto.getRandomValues(target);
-  } else {
-    throw new Error('Generador aleatorio no disponible.');
+const bufferToBase64 = (buffer) => {
+  if (typeof globalThis !== 'undefined' && typeof globalThis.Buffer === 'function') {
+    return globalThis.Buffer.from(buffer).toString('base64');
   }
-  const encoded = encodeBcryptBase64(target).slice(0, 22);
-  return `$2b$${normalizedCost.toString().padStart(2, '0')}$${encoded}`;
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return globalThis.btoa(binary);
+};
+
+const base64ToBytes = (base64) => {
+  if (typeof globalThis !== 'undefined' && typeof globalThis.Buffer === 'function') {
+    return new Uint8Array(globalThis.Buffer.from(base64, 'base64'));
+  }
+  const binary = globalThis.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+};
+
+const deriveKey = async (password, salt, iterations) => {
+  const crypto = getCrypto();
+  const baseKey = await crypto.subtle.importKey('raw', textEncoder.encode(password), 'PBKDF2', false, [
+    'deriveBits',
+  ]);
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      hash: 'SHA-256',
+      salt,
+      iterations,
+    },
+    baseKey,
+    LOCAL_HASH_KEY_LENGTH * 8,
+  );
+  return new Uint8Array(bits);
+};
+
+const hashPasswordLocally = async (password) => {
+  const crypto = getCrypto();
+  const salt = new Uint8Array(LOCAL_SALT_LENGTH);
+  crypto.getRandomValues(salt);
+  const derived = await deriveKey(password, salt, LOCAL_HASH_ITERATIONS);
+  return `${LOCAL_HASH_PREFIX}$${LOCAL_HASH_ITERATIONS}$${bufferToBase64(salt)}$${bufferToBase64(derived)}`;
+};
+
+const verifyPasswordLocally = async (password, hash) => {
+  try {
+    const parts = String(hash ?? '').split('$');
+    if (parts.length !== 4 || parts[0] !== LOCAL_HASH_PREFIX) return false;
+    const iterations = Number(parts[1]);
+    if (!Number.isFinite(iterations) || iterations <= 0) return false;
+    const salt = base64ToBytes(parts[2]);
+    const expectedDigest = parts[3];
+    const derived = await deriveKey(password, salt, iterations);
+    return bufferToBase64(derived) === expectedDigest;
+  } catch (err) {
+    console.error('[auth] Error verificando contraseña local:', err);
+    return false;
+  }
 };
 
 const AuthCtx = createContext(null);
@@ -152,35 +187,33 @@ const hashPasswordWithDatabase = async (password) => {
   const plain = password ?? '';
   if (!plain) throw new Error('La contraseña no puede estar vacía.');
 
-  let salt = null;
-  let saltError = null;
+  let hashed = null;
 
   try {
-    const response = await supabase.rpc('gen_salt', { type: 'bf' });
-    salt = response.data ?? null;
-    saltError = response.error ?? null;
+    const saltResponse = await supabase.rpc('gen_salt', { type: 'bf' });
+    if (saltResponse?.error) {
+      console.warn('[auth] Supabase no pudo generar un salt bcrypt, se usará un hash local:', saltResponse.error);
+    } else if (saltResponse?.data) {
+      const { data: remoteHash, error: hashError } = await supabase.rpc('crypt', {
+        password: plain,
+        salt: saltResponse.data,
+      });
+      if (hashError) {
+        console.warn('[auth] Supabase no pudo hashear la contraseña, se usará un hash local:', hashError);
+      } else if (remoteHash) {
+        hashed = remoteHash;
+      }
+    }
   } catch (err) {
-    saltError = err;
+    console.warn('[auth] Supabase no disponible para generar hash bcrypt, se usará un hash local:', err);
   }
 
-  if (!salt) {
-    if (saltError) {
-      console.warn('[auth] Supabase no pudo generar un salt bcrypt, se usará uno local:', saltError);
-    }
-    try {
-      salt = generateLocalBcryptSalt();
-    } catch (localError) {
-      console.error('[auth] Error generando salt bcrypt local:', localError);
-      throw new Error('No se pudo generar la contraseña de manera segura.');
-    }
-  }
+  if (hashed) return hashed;
 
   try {
-    const { data: hashed, error: hashError } = await supabase.rpc('crypt', { password: plain, salt });
-    if (hashError || !hashed) throw hashError ?? new Error('hash nulo');
-    return hashed;
+    return await hashPasswordLocally(plain);
   } catch (err) {
-    console.error('[auth] No se pudo proteger la contraseña con Supabase:', err);
+    console.error('[auth] Error generando hash local de contraseña:', err);
     throw new Error('No se pudo proteger la contraseña.');
   }
 };
@@ -190,12 +223,25 @@ const verifyPasswordWithDatabase = async (password, storedHash, userId) => {
 
   // hashes creados con gen_salt('bf') empiezan con $2 (bcrypt)
   if (storedHash.startsWith('$2')) {
-    const { data, error } = await supabase.rpc('crypt', { password, salt: storedHash });
-    if (error || !data) {
-      console.error('[auth] Error verificando contraseña:', error);
-      return false;
+    try {
+      const { data, error } = await supabase.rpc('crypt', { password, salt: storedHash });
+      if (!error && data) {
+        return data === storedHash;
+      }
+      if (error) {
+        console.warn('[auth] Supabase no pudo verificar la contraseña, se intentará localmente:', error);
+      }
+    } catch (err) {
+      console.warn('[auth] Supabase no disponible para verificar contraseña, se intentará localmente:', err);
     }
-    return data === storedHash;
+
+    const localMatch = await verifyPasswordLocally(password, storedHash);
+    if (localMatch) return true;
+  }
+
+  if (storedHash.startsWith(LOCAL_HASH_PREFIX)) {
+    const localMatch = await verifyPasswordLocally(password, storedHash);
+    if (localMatch) return true;
   }
 
   // Si la contraseña quedó guardada en texto plano (creada manualmente),
@@ -405,11 +451,12 @@ export function AuthProvider({ children }) {
           .insert({
             username: p_username,
             correo: p_correo,
+            telefono: p_telefono,
             contrasena_hash: hashedPassword,
-            estado: 'activo',
             idrol: roleId,
+            fecha_registro: new Date().toISOString(),
           })
-          .select('id, username, correo, estado, idrol')
+          .select('id, username, correo, telefono, idrol, fecha_registro')
           .single();
 
         if (userInsert.error || !userInsert.data) {
@@ -423,12 +470,10 @@ export function AuthProvider({ children }) {
         const clientInsert = await supabase
           .from('cliente')
           .insert({
-            nombrecompleto: p_nombre,
-            telefono: p_telefono,
-            correo: p_correo,
             idusuario: createdUser.id,
+            Descuento: 0,
           })
-          .select('id, nombrecompleto, telefono, correo, idusuario')
+          .select('idcliente, idusuario, Descuento')
           .single();
 
         if (clientInsert.error || !clientInsert.data) {
@@ -448,14 +493,13 @@ export function AuthProvider({ children }) {
           mapUserPayload({
             ...createdUser,
             role: 'cliente',
-            nombre: clientInsert.data.nombrecompleto,
-            nombrecompleto: clientInsert.data.nombrecompleto,
-            cliente: clientInsert.data,
-          }) ??
-          {
+            nombre: p_nombre,
+            nombrecompleto: p_nombre,
+            cliente: { ...clientInsert.data },
+          }) ?? {
             ...createdUser,
             role: 'cliente',
-            name: clientInsert.data.nombrecompleto,
+            name: p_nombre,
           };
 
         if (fallbackPayload) {
