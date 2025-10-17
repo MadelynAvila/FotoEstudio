@@ -26,6 +26,21 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('es-GT', { dateStyle: 'medium' }).format(date)
 }
 
+function formatTime(value) {
+  if (!value) return '—'
+  const [hours = '', minutes = ''] = String(value).split(':')
+  const h = hours.padStart(2, '0')
+  const m = minutes.padStart(2, '0')
+  return `${h}:${m}`
+}
+
+function formatTimeRange(inicio, fin) {
+  if (!inicio && !fin) return '—'
+  if (inicio && !fin) return formatTime(inicio)
+  if (!inicio && fin) return formatTime(fin)
+  return `${formatTime(inicio)} – ${formatTime(fin)}`
+}
+
 export default function AdminReservations(){
   const [reservas, setReservas] = useState([])
   const [paquetes, setPaquetes] = useState([])
@@ -48,7 +63,16 @@ export default function AdminReservations(){
           estado_pago,
           nombre_actividad,
           ubicacion,
-          agenda:agenda ( fecha, horainicio ),
+          agenda:agenda (
+            fecha,
+            horainicio,
+            horafin,
+            fotografo:usuario!agenda_idfotografo_fkey (
+              id,
+              username,
+              telefono
+            )
+          ),
           cliente:usuario!actividad_idcliente_fkey ( id, username, telefono ),
           paquete:paquete ( id, nombre_paquete )
         `)
@@ -78,6 +102,11 @@ export default function AdminReservations(){
       telefono: item.cliente?.telefono || '—',
       comentarios: item.nombre_actividad || '',
       fecha: item.agenda?.fecha,
+      horaInicio: item.agenda?.horainicio,
+      horaFin: item.agenda?.horafin,
+      fotografo: item.agenda?.fotografo?.username || 'Sin asignar',
+      fotografoTelefono: item.agenda?.fotografo?.telefono || '—',
+      ubicacion: item.ubicacion || 'No especificada',
       estado: (item.estado_pago || 'pendiente').toLowerCase(),
       paquete: item.paquete?.nombre_paquete || 'Paquete sin asignar'
     }))
@@ -331,8 +360,12 @@ export default function AdminReservations(){
               <thead className="bg-sand text-left uppercase text-xs tracking-wide text-slate-600">
                 <tr>
                   <th className="p-2">Cliente</th>
+                  <th className="p-2">Teléfono</th>
                   <th className="p-2">Paquete</th>
                   <th className="p-2">Fecha</th>
+                  <th className="p-2">Horario</th>
+                  <th className="p-2">Fotógrafo</th>
+                  <th className="p-2">Ubicación</th>
                   <th className="p-2">Estado</th>
                   <th className="p-2">Comentarios</th>
                 </tr>
@@ -341,8 +374,15 @@ export default function AdminReservations(){
                 {reservas.map(reserva => (
                   <tr key={reserva.id} className="border-b last:border-0">
                     <td className="p-2 font-medium text-slate-700">{reserva.nombre}</td>
+                    <td className="p-2">{reserva.telefono}</td>
                     <td className="p-2">{reserva.paquete}</td>
                     <td className="p-2">{formatDate(reserva.fecha)}</td>
+                    <td className="p-2">{formatTimeRange(reserva.horaInicio, reserva.horaFin)}</td>
+                    <td className="p-2">
+                      <div>{reserva.fotografo}</div>
+                      <div className="text-xs text-slate-500">{reserva.fotografoTelefono}</div>
+                    </td>
+                    <td className="p-2 text-slate-600">{reserva.ubicacion}</td>
                     <td className="p-2">
                       <select
                         value={reserva.estado}
@@ -372,7 +412,10 @@ export default function AdminReservations(){
             {reservasPendientes.map(reserva => (
               <li key={reserva.id} className="card border border-[var(--border)] p-3">
                 <strong>{reserva.nombre}</strong> — {reserva.paquete}
-                <div className="text-xs text-slate-500">{formatDate(reserva.fecha)}</div>
+                <div className="text-xs text-slate-500">
+                  {formatDate(reserva.fecha)} · {formatTimeRange(reserva.horaInicio, reserva.horaFin)}
+                </div>
+                <div className="text-xs text-slate-500">Fotógrafo: {reserva.fotografo}</div>
               </li>
             ))}
           </ul>
