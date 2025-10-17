@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import AdminHelpCard from '../components/AdminHelpCard'
 
@@ -11,12 +11,15 @@ export default function AdminClients(){
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState({ type: '', message: '' })
   const [rolClienteId, setRolClienteId] = useState(null)
+  const [estadoOptions, setEstadoOptions] = useState([])
+  const [updatingStatusId, setUpdatingStatusId] = useState(null)
+  const [historyPanel, setHistoryPanel] = useState({ visible: false, loading: false, reservas: [], cliente: null, message: '' })
 
   const fetchClientes = async () => {
     setLoading(true)
     const { data, error } = await supabase
       .from('cliente')
-      .select('idcliente, Descuento, usuario:usuario ( id, username, telefono, correo, fecha_registro )')
+      .select('idcliente, Descuento, usuario:usuario ( id, username, telefono, correo, fecha_registro, idestado, estado:estado_usuario ( id, nombre_estado ) )')
       .order('idcliente', { ascending: false })
 
     if (error) {
@@ -31,7 +34,9 @@ export default function AdminClients(){
         telefono: item.usuario?.telefono || '',
         correo: item.usuario?.correo || '',
         fecharegistro: item.usuario?.fecha_registro,
-        descuento: item.Descuento ?? 0
+        descuento: item.Descuento ?? 0,
+        estadoId: item.usuario?.idestado || null,
+        estadoNombre: item.usuario?.estado?.nombre_estado || 'Sin estado'
       }))
       setClientes(formatted)
       setFeedback({ type: '', message: '' })
@@ -51,9 +56,19 @@ export default function AdminClients(){
     }
   }
 
+  const fetchEstados = async () => {
+    const { data, error } = await supabase.from('estado_usuario').select('id, nombre_estado').order('nombre_estado', { ascending: true })
+    if (error) {
+      console.error('No se pudieron cargar los estados de usuario', error)
+      return
+    }
+    setEstadoOptions(data ?? [])
+  }
+
   useEffect(() => {
     fetchRolCliente()
     fetchClientes()
+    fetchEstados()
   }, [])
 
   const updateField = (field, value) => {
@@ -62,6 +77,64 @@ export default function AdminClients(){
 
   const resetForm = () => {
     setForm(defaultForm)
+  }
+
+  const onChangeEstado = async (cliente, nuevoEstadoId) => {
+    if (!cliente?.usuarioId) {
+      setFeedback({ type: 'error', message: 'No se pudo identificar el usuario para actualizar el estado.' })
+      return
+    }
+
+    setFeedback({ type: '', message: '' })
+    setUpdatingStatusId(cliente.id)
+
+    const { error } = await supabase
+      .from('usuario')
+      .update({ idestado: nuevoEstadoId || null })
+      .eq('id', cliente.usuarioId)
+
+    if (error) {
+      console.error('No se pudo actualizar el estado del cliente', error)
+      setFeedback({ type: 'error', message: 'No se pudo actualizar el estado del cliente.' })
+    } else {
+      setClientes(prev => prev.map(item => item.id === cliente.id ? { ...item, estadoId: nuevoEstadoId || null, estadoNombre: estadoOptions.find(estado => estado.id === nuevoEstadoId)?.nombre_estado || 'Sin estado' } : item))
+      setFeedback({ type: 'success', message: 'Estado del cliente actualizado correctamente.' })
+    }
+
+    setUpdatingStatusId(null)
+  }
+
+  const openHistory = async (cliente) => {
+    setHistoryPanel({ visible: true, loading: true, reservas: [], cliente, message: '' })
+
+    const { data, error } = await supabase
+      .from('actividad')
+      .select('id, estado_pago, nombre_actividad, ubicacion, agenda:agenda ( fecha, horainicio, horafin ), paquete:paquete ( nombre_paquete )')
+      .eq('idcliente', cliente.id)
+      .order('id', { ascending: false })
+
+    if (error) {
+      console.error('No se pudo cargar el historial del cliente', error)
+      setHistoryPanel(prev => ({ ...prev, loading: false, message: 'No se pudo cargar el historial de reservas.' }))
+      return
+    }
+
+    const reservas = (data ?? []).map(item => ({
+      id: item.id,
+      estadoPago: item.estado_pago,
+      nombreActividad: item.nombre_actividad,
+      ubicacion: item.ubicacion,
+      fecha: item.agenda?.fecha,
+      horaInicio: item.agenda?.horainicio,
+      horaFin: item.agenda?.horafin,
+      paquete: item.paquete?.nombre_paquete
+    }))
+
+    setHistoryPanel(prev => ({ ...prev, loading: false, reservas }))
+  }
+
+  const closeHistory = () => {
+    setHistoryPanel({ visible: false, loading: false, reservas: [], cliente: null, message: '' })
   }
 
   const onSubmit = async (event) => {
@@ -176,8 +249,36 @@ export default function AdminClients(){
     if (form.id === id) resetForm()
   }
 
+  const totalClientes = useMemo(() => clientes.length, [clientes])
+  const clientesConTelefono = useMemo(() => clientes.filter(cliente => cliente.telefono).length, [clientes])
+  const clientesConCorreo = useMemo(() => clientes.filter(cliente => cliente.correo).length, [clientes])
+  const clientesSinEstado = useMemo(() => clientes.filter(cliente => !cliente.estadoId).length, [clientes])
+
   return (
     <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="card p-4 bg-gradient-to-br from-amber-50 to-white border border-amber-100">
+          <p className="text-xs uppercase tracking-wide text-amber-600">Clientes totales</p>
+          <p className="mt-2 text-3xl font-semibold text-umber">{totalClientes}</p>
+          <p className="mt-1 text-xs text-slate-500">Registro actualizado automáticamente</p>
+        </div>
+        <div className="card p-4 border border-slate-200">
+          <p className="text-xs uppercase tracking-wide text-slate-600">Con teléfono</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-800">{clientesConTelefono}</p>
+          <p className="mt-1 text-xs text-slate-500">Contactos directos listos para confirmar sesiones</p>
+        </div>
+        <div className="card p-4 border border-slate-200">
+          <p className="text-xs uppercase tracking-wide text-slate-600">Con correo</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-800">{clientesConCorreo}</p>
+          <p className="mt-1 text-xs text-slate-500">Ideales para envíos de recordatorios y facturas</p>
+        </div>
+        <div className="card p-4 border border-slate-200">
+          <p className="text-xs uppercase tracking-wide text-slate-600">Sin estado asignado</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-800">{clientesSinEstado}</p>
+          <p className="mt-1 text-xs text-slate-500">Actualiza su estatus para ordenar tu cartera</p>
+        </div>
+      </div>
+
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
         <div className="card flex-1 p-5 space-y-4">
           <header className="flex flex-wrap items-center justify-between gap-3">
@@ -250,6 +351,7 @@ export default function AdminClients(){
                   <th className="p-2">Nombre</th>
                   <th className="p-2">Teléfono</th>
                   <th className="p-2">Correo</th>
+                  <th className="p-2">Estado</th>
                   <th className="p-2">Registro</th>
                   <th className="p-2 text-right">Acciones</th>
                 </tr>
@@ -260,9 +362,28 @@ export default function AdminClients(){
                     <td className="p-2 font-medium text-slate-700">{cliente.nombrecompleto}</td>
                     <td className="p-2">{cliente.telefono || '—'}</td>
                     <td className="p-2">{cliente.correo || '—'}</td>
+                    <td className="p-2">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center rounded-full bg-sand px-2 py-0.5 text-xs font-medium text-amber-700">
+                          {estadoOptions.find(estado => estado.id === cliente.estadoId)?.nombre_estado || 'Sin estado'}
+                        </span>
+                        <select
+                          value={cliente.estadoId || ''}
+                          onChange={(event) => onChangeEstado(cliente, event.target.value ? Number(event.target.value) : null)}
+                          className="border rounded-xl2 px-2 py-1 text-xs"
+                          disabled={updatingStatusId === cliente.id}
+                        >
+                          <option value="">Sin estado</option>
+                          {estadoOptions.map(estado => (
+                            <option key={estado.id} value={estado.id}>{estado.nombre_estado}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </td>
                     <td className="p-2">{cliente.fecharegistro ? new Date(cliente.fecharegistro).toLocaleDateString('es-GT') : '—'}</td>
                     <td className="p-2">
                       <div className="flex justify-end gap-2">
+                        <button type="button" className="btn btn-ghost" onClick={() => openHistory(cliente)}>Historial</button>
                         <button type="button" className="btn btn-ghost" onClick={() => onEdit(cliente)}>Editar</button>
                         <button type="button" className="btn btn-ghost" onClick={() => onDelete(cliente.id)}>Eliminar</button>
                       </div>
@@ -276,6 +397,50 @@ export default function AdminClients(){
           <p className="muted text-sm">No has registrado clientes todavía.</p>
         )}
       </div>
+
+      {historyPanel.visible && (
+        <div className="card p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div>
+              <h3 className="text-lg font-semibold text-umber">Historial de reservas</h3>
+              <p className="text-sm text-slate-500">{historyPanel.cliente?.nombrecompleto} • {historyPanel.cliente?.correo || historyPanel.cliente?.telefono || 'Sin contacto registrado'}</p>
+            </div>
+            <button type="button" className="btn btn-ghost" onClick={closeHistory}>Cerrar</button>
+          </div>
+
+          {historyPanel.loading ? (
+            <p className="muted text-sm">Cargando reservas…</p>
+          ) : historyPanel.message ? (
+            <p className="text-sm text-red-600">{historyPanel.message}</p>
+          ) : historyPanel.reservas.length ? (
+            <ul className="space-y-3">
+              {historyPanel.reservas.map(reserva => {
+                const fecha = reserva.fecha ? new Date(reserva.fecha).toLocaleDateString('es-GT') : 'Fecha por confirmar'
+                const horaInicio = reserva.horaInicio ? reserva.horaInicio.slice(0, 5) : '—'
+                const horaFin = reserva.horaFin ? reserva.horaFin.slice(0, 5) : '—'
+                return (
+                  <li key={reserva.id} className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="font-semibold text-slate-800">{reserva.nombreActividad || reserva.paquete || 'Reserva sin título'}</p>
+                        <p className="text-xs uppercase tracking-wide text-amber-700">Estado de pago: {reserva.estadoPago}</p>
+                      </div>
+                      <span className="text-sm text-slate-500">#{reserva.id}</span>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-3">
+                      <p><span className="font-medium text-slate-700">Fecha:</span> {fecha}</p>
+                      <p><span className="font-medium text-slate-700">Horario:</span> {horaInicio} - {horaFin}</p>
+                      <p><span className="font-medium text-slate-700">Ubicación:</span> {reserva.ubicacion || 'Por definir'}</p>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <p className="muted text-sm">No registra reservas previas ni pendientes.</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
