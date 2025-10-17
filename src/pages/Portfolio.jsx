@@ -12,15 +12,15 @@ export default function Portfolio(){
       setLoading(true)
       setError('')
       const { data, error: fetchError } = await supabase
-        .from('fotosgaleria')
-        .select('id, urlfoto, idgaleria')
+        .from('galeria_paquete')
+        .select('id, url_imagen, descripcion, id_paquete, paquete:paquete ( nombre_paquete )')
       if (!active) return
       if (fetchError) {
         console.error('No se pudo cargar la galería', fetchError)
         setError('No pudimos cargar la galería en este momento. Intenta nuevamente más tarde.')
         setFotos([])
       } else {
-        setFotos((data ?? []).filter(f => f.urlfoto))
+        setFotos((data ?? []).filter(f => f.url_imagen))
       }
       setLoading(false)
     }
@@ -37,7 +37,7 @@ export default function Portfolio(){
         <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(180px,1fr))]">
           {fotos.map(f => (
             <div key={f.id} className="card aspect-square bg-sand flex items-center justify-center overflow-hidden">
-              <img src={f.urlfoto} alt="Fotografía" className="w-full h-full object-cover"/>
+              <img src={f.url_imagen} alt={f.descripcion || f.paquete?.nombre_paquete || 'Fotografía'} className="w-full h-full object-cover"/>
             </div>
           ))}
           {fotos.length === 0 && (

@@ -12,15 +12,48 @@ export default function Services(){
       setLoading(true)
       setError('')
       const { data, error: fetchError } = await supabase
-        .from('servicio')
-        .select('id, nombre, descripcion, precio')
+        .from('tipo_evento')
+        .select('id, nombre_evento, descripcion, paquetes:paquete ( precio )')
       if (!active) return
       if (fetchError) {
         console.error('No se pudieron cargar los servicios', fetchError)
         setError('No pudimos obtener los servicios. Intenta nuevamente más tarde.')
         setServicios([])
       } else {
-        setServicios(data ?? [])
+        const formatted = (data ?? []).map(item => {
+          let descripcion = item.descripcion || ''
+          let precio = null
+
+          if (descripcion?.trim().startsWith('{')) {
+            try {
+              const parsed = JSON.parse(descripcion)
+              descripcion = parsed.descripcion ?? descripcion
+              if (parsed.precio !== undefined && parsed.precio !== null) {
+                precio = parsed.precio
+              }
+            } catch (error) {
+              console.error('No se pudo interpretar la descripción del evento', error)
+            }
+          }
+
+          if (precio === null && Array.isArray(item.paquetes) && item.paquetes.length) {
+            const precios = item.paquetes
+              .map(paquete => Number(paquete.precio))
+              .filter(value => Number.isFinite(value))
+            if (precios.length) {
+              precio = Math.min(...precios)
+            }
+          }
+
+          return {
+            id: item.id,
+            nombre: item.nombre_evento,
+            descripcion,
+            precio
+          }
+        })
+
+        setServicios(formatted)
       }
       setLoading(false)
     }

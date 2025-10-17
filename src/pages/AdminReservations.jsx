@@ -9,12 +9,14 @@ const defaultForm = {
   telefono: '',
   comentarios: '',
   fecha: '',
-  estado: 'pendiente'
+  estado: 'pendiente',
+  paqueteId: ''
 }
 
 function formatEstado(value) {
   if (!value) return 'Pendiente'
-  return value.charAt(0).toUpperCase() + value.slice(1)
+  const lower = value.toLowerCase()
+  return lower.charAt(0).toUpperCase() + lower.slice(1)
 }
 
 function formatDate(value) {
@@ -26,45 +28,66 @@ function formatDate(value) {
 
 export default function AdminReservations(){
   const [reservas, setReservas] = useState([])
+  const [paquetes, setPaquetes] = useState([])
   const [form, setForm] = useState(defaultForm)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState({ type: '', message: '' })
+  const [rolClienteId, setRolClienteId] = useState(null)
+  const [rolFotografoId, setRolFotografoId] = useState(null)
 
   const fetchData = async () => {
     setLoading(true)
     setFeedback({ type: '', message: '' })
 
-    const { data, error } = await supabase
-      .from('actividad')
-      .select(`
-        id,
-        comentarios,
-        estado,
-        fechareserva,
-        cliente:cliente ( id, nombrecompleto, telefono ),
-        pago:pagoactividad ( id )
-      `)
-      .order('fechareserva', { ascending: false })
+    const [actividadesRes, paquetesRes, rolesRes] = await Promise.all([
+      supabase
+        .from('actividad')
+        .select(`
+          id,
+          estado_pago,
+          nombre_actividad,
+          ubicacion,
+          agenda:agenda ( fecha, horainicio ),
+          cliente:usuario!actividad_idcliente_fkey ( id, username, telefono ),
+          paquete:paquete ( id, nombre_paquete )
+        `)
+        .order('id', { ascending: false }),
+      supabase
+        .from('paquete')
+        .select('id, nombre_paquete')
+        .order('nombre_paquete', { ascending: true }),
+      supabase
+        .from('rol')
+        .select('id, nombre')
+    ])
 
-    if (error) {
-      console.error('No se pudieron cargar las reservas', error)
+    const errors = [actividadesRes.error, paquetesRes.error, rolesRes.error].filter(Boolean)
+    if (errors.length) {
+      errors.forEach(err => console.error('No se pudieron cargar las reservas', err))
       setReservas([])
+      setPaquetes([])
       setFeedback({ type: 'error', message: 'No pudimos obtener las reservas. Revisa tu configuración de Supabase.' })
-    } else {
-      const formatted = (data ?? []).map(item => ({
-        id: item.id,
-        nombre: item.cliente?.nombrecompleto || 'Cliente sin nombre',
-        telefono: item.cliente?.telefono || '—',
-        comentarios: item.comentarios || '',
-        fecha: item.fechareserva,
-        estado: (item.estado || 'pendiente').toLowerCase(),
-        pago: Array.isArray(item.pago) ? item.pago[0] : item.pago
-      }))
-
-      setReservas(formatted)
+      setLoading(false)
+      return
     }
 
+    const formatted = (actividadesRes.data ?? []).map(item => ({
+      id: item.id,
+      nombre: item.cliente?.username || 'Cliente sin nombre',
+      telefono: item.cliente?.telefono || '—',
+      comentarios: item.nombre_actividad || '',
+      fecha: item.agenda?.fecha,
+      estado: (item.estado_pago || 'pendiente').toLowerCase(),
+      paquete: item.paquete?.nombre_paquete || 'Paquete sin asignar'
+    }))
+
+    const rolCliente = rolesRes.data?.find(rol => rol.nombre?.toLowerCase() === 'cliente')
+    const rolFotografo = rolesRes.data?.find(rol => rol.nombre?.toLowerCase() === 'fotografo' || rol.nombre?.toLowerCase() === 'fotógrafo')
+    setRolClienteId(rolCliente?.id ?? null)
+    setRolFotografoId(rolFotografo?.id ?? null)
+    setReservas(formatted)
+    setPaquetes(paquetesRes.data ?? [])
     setLoading(false)
   }
 
@@ -87,41 +110,90 @@ export default function AdminReservations(){
     event.preventDefault()
     setFeedback({ type: '', message: '' })
 
-    if (!form.nombre || !form.fecha) {
-      setFeedback({ type: 'error', message: 'El nombre del cliente y la fecha son obligatorios.' })
+    if (!form.nombre || !form.fecha || !form.paqueteId) {
+      setFeedback({ type: 'error', message: 'El nombre del cliente, la fecha y el paquete son obligatorios.' })
+      return
+    }
+
+    if (!rolClienteId) {
+      setFeedback({ type: 'error', message: 'No se pudo determinar el rol de cliente. Revisa la configuración de roles.' })
       return
     }
 
     setSaving(true)
 
-    const { data: cliente, error: clienteError } = await supabase
-      .from('cliente')
+    const { data: usuarioData, error: usuarioError } = await supabase
+      .from('usuario')
       .insert([
         {
-          nombrecompleto: form.nombre,
-          telefono: form.telefono || null
+          username: form.nombre,
+          telefono: form.telefono || null,
+          idRol: rolClienteId
         }
       ])
       .select('id')
       .single()
 
-    if (clienteError || !cliente) {
-      console.error('No se pudo registrar el cliente', clienteError)
+    if (usuarioError || !usuarioData) {
+      console.error('No se pudo registrar el cliente', usuarioError)
       setFeedback({ type: 'error', message: 'Ocurrió un error al registrar el cliente para la reserva.' })
       setSaving(false)
       return
     }
 
-    const fechaReserva = form.fecha ? new Date(`${form.fecha}T00:00:00`).toISOString() : null
+    await supabase.from('cliente').insert([{ idusuario: usuarioData.id, Descuento: 0 }])
+
+    if (!rolFotografoId) {
+      setFeedback({ type: 'error', message: 'No hay fotógrafos disponibles para asignar a la reserva.' })
+      setSaving(false)
+      return
+    }
+
+    const { data: fotografoData } = await supabase
+      .from('usuario')
+      .select('id')
+      .eq('idRol', rolFotografoId)
+      .limit(1)
+      .maybeSingle()
+
+    const fotografoAsignado = fotografoData?.id
+    if (!fotografoAsignado) {
+      setFeedback({ type: 'error', message: 'No se encontró un fotógrafo disponible. Registra al menos uno en el sistema.' })
+      setSaving(false)
+      return
+    }
+
+    const agendaPayload = {
+      idfotografo: fotografoAsignado,
+      fecha: form.fecha,
+      horainicio: '09:00:00',
+      horafin: '10:00:00',
+      disponible: false
+    }
+
+    const { data: agendaData, error: agendaError } = await supabase
+      .from('agenda')
+      .insert([agendaPayload])
+      .select('id')
+      .single()
+
+    if (agendaError || !agendaData) {
+      console.error('No se pudo crear la agenda', agendaError)
+      setFeedback({ type: 'error', message: 'Ocurrió un error al crear la agenda de la reserva.' })
+      setSaving(false)
+      return
+    }
 
     const { error: actividadError } = await supabase
       .from('actividad')
       .insert([
         {
-          idcliente: cliente.id,
-          comentarios: form.comentarios || null,
-          estado: form.estado || 'pendiente',
-          fechareserva: fechaReserva
+          idcliente: usuarioData.id,
+          idagenda: agendaData.id,
+          idpaquete: Number(form.paqueteId),
+          estado_pago: form.estado,
+          nombre_actividad: form.comentarios || null,
+          ubicacion: null
         }
       ])
 
@@ -140,7 +212,7 @@ export default function AdminReservations(){
   const onEstadoChange = async (id, nuevoEstado) => {
     const { error } = await supabase
       .from('actividad')
-      .update({ estado: nuevoEstado })
+      .update({ estado_pago: nuevoEstado })
       .eq('id', id)
 
     if (error) {
@@ -203,6 +275,19 @@ export default function AdminReservations(){
               />
             </label>
             <label className="grid gap-1 text-sm">
+              <span className="font-medium text-slate-700">Paquete *</span>
+              <select
+                value={form.paqueteId}
+                onChange={e => updateField('paqueteId', e.target.value)}
+                className="border rounded-xl2 px-3 py-2"
+              >
+                <option value="">Selecciona un paquete</option>
+                {paquetes.map(paquete => (
+                  <option key={paquete.id} value={paquete.id}>{paquete.nombre_paquete}</option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm">
               <span className="font-medium text-slate-700">Estado</span>
               <select
                 value={form.estado}
@@ -219,19 +304,19 @@ export default function AdminReservations(){
                 {saving ? 'Guardando…' : 'Guardar reserva'}
               </button>
               {feedback.message && (
-                <span className={`text-sm ${feedback.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
+                <p className={`text-sm ${feedback.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
                   {feedback.message}
-                </span>
+                </p>
               )}
             </div>
           </form>
         </div>
 
         <div className="lg:w-[320px]">
-          <AdminHelpCard title="Consejos para reservas">
-            <p>Confirma los datos del cliente antes de crear una reserva para mantener registros limpios.</p>
-            <p>Utiliza los estados para saber qué solicitudes requieren seguimiento inmediato.</p>
-            <p>Registra un pago desde la sección de pagos cuando una reserva haya sido completada.</p>
+          <AdminHelpCard title="Sugerencias para seguimiento">
+            <p>Confirma rápidamente las reservas pendientes para mejorar la experiencia de tus clientes.</p>
+            <p>Utiliza los estados para coordinar tareas internas y mantener al equipo informado.</p>
+            <p>Actualiza los comentarios con detalles relevantes como locaciones o requerimientos especiales.</p>
           </AdminHelpCard>
         </div>
       </div>
@@ -246,23 +331,21 @@ export default function AdminReservations(){
               <thead className="bg-sand text-left uppercase text-xs tracking-wide text-slate-600">
                 <tr>
                   <th className="p-2">Cliente</th>
-                  <th className="p-2">Teléfono</th>
-                  <th className="p-2">Comentarios</th>
+                  <th className="p-2">Paquete</th>
                   <th className="p-2">Fecha</th>
                   <th className="p-2">Estado</th>
-                  <th className="p-2">Pago</th>
+                  <th className="p-2">Comentarios</th>
                 </tr>
               </thead>
               <tbody>
                 {reservas.map(reserva => (
                   <tr key={reserva.id} className="border-b last:border-0">
-                    <td className="p-2 font-medium">{reserva.nombre}</td>
-                    <td className="p-2">{reserva.telefono}</td>
-                    <td className="p-2">{reserva.comentarios || '—'}</td>
+                    <td className="p-2 font-medium text-slate-700">{reserva.nombre}</td>
+                    <td className="p-2">{reserva.paquete}</td>
                     <td className="p-2">{formatDate(reserva.fecha)}</td>
                     <td className="p-2">
                       <select
-                        value={reserva.estado || 'pendiente'}
+                        value={reserva.estado}
                         onChange={e => onEstadoChange(reserva.id, e.target.value)}
                         className="border rounded-xl2 px-2 py-1"
                       >
@@ -271,41 +354,30 @@ export default function AdminReservations(){
                         ))}
                       </select>
                     </td>
-                    <td className="p-2 text-xs text-slate-600">{reserva.pago ? 'Pagado' : 'Pendiente'}</td>
+                    <td className="p-2 text-slate-600 whitespace-pre-line">{reserva.comentarios || 'Sin comentarios'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <p className="muted text-sm">No hay reservas registradas.</p>
+          <p className="muted text-sm">Todavía no hay reservas registradas.</p>
         )}
       </div>
 
       <div className="card p-5">
         <h2 className="text-lg font-semibold text-umber mb-3">Reservas pendientes</h2>
-        {loading ? (
-          <p className="muted text-sm">Cargando reservas…</p>
-        ) : reservasPendientes.length ? (
+        {reservasPendientes.length ? (
           <ul className="space-y-2 text-sm">
             {reservasPendientes.map(reserva => (
-              <li key={reserva.id} className="flex items-center justify-between border-b last:border-0 pb-2">
-                <div>
-                  <p className="font-medium text-slate-700">{reserva.nombre}</p>
-                  <p className="text-xs text-slate-500">{formatDate(reserva.fecha)}</p>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => onEstadoChange(reserva.id, 'confirmada')}
-                >
-                  Marcar confirmada
-                </button>
+              <li key={reserva.id} className="card border border-[var(--border)] p-3">
+                <strong>{reserva.nombre}</strong> — {reserva.paquete}
+                <div className="text-xs text-slate-500">{formatDate(reserva.fecha)}</div>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="muted text-sm">No hay reservas pendientes por confirmar.</p>
+          <p className="muted text-sm">No tienes reservas pendientes en este momento.</p>
         )}
       </div>
     </div>

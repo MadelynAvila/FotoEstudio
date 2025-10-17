@@ -43,8 +43,9 @@ export default function AdminDashboard(){
         actividadesRes,
         pagosRes,
         clientesRes,
-        fotografosRes,
-        serviciosRes,
+        usuariosRes,
+        rolesRes,
+        eventosRes,
         paquetesRes,
         resenasRes
       ] = await Promise.all([
@@ -52,17 +53,20 @@ export default function AdminDashboard(){
           .from('actividad')
           .select(`
             id,
-            comentarios,
-            estado,
-            fechareserva,
-            cliente:cliente (nombrecompleto),
-            pago:pagoactividad (id)
+            estado_pago,
+            nombre_actividad,
+            ubicacion,
+            agenda:agenda ( fecha, horainicio, horafin ),
+            cliente:usuario!actividad_idcliente_fkey ( id, username, telefono ),
+            paquete:paquete ( id, nombre_paquete ),
+            pago:pago ( id, monto, fecha_pago )
           `)
-          .order('fechareserva', { ascending: false }),
-        supabase.from('pagoactividad').select('id'),
-        supabase.from('cliente').select('id'),
-        supabase.from('fotografo').select('id'),
-        supabase.from('servicio').select('id'),
+          .order('id', { ascending: false }),
+        supabase.from('pago').select('id, idactividad'),
+        supabase.from('cliente').select('idcliente'),
+        supabase.from('usuario').select('id, idRol'),
+        supabase.from('rol').select('id, nombre'),
+        supabase.from('tipo_evento').select('id'),
         supabase.from('paquete').select('id'),
         supabase.from('resena').select('id')
       ])
@@ -73,8 +77,9 @@ export default function AdminDashboard(){
         actividadesRes.error,
         pagosRes.error,
         clientesRes.error,
-        fotografosRes.error,
-        serviciosRes.error,
+        usuariosRes.error,
+        rolesRes.error,
+        eventosRes.error,
         paquetesRes.error,
         resenasRes.error
       ].filter(Boolean)
@@ -90,14 +95,28 @@ export default function AdminDashboard(){
       }
 
       const actividades = actividadesRes.data ?? []
-      const formatted = actividades.map(item => ({
-        id: item.id,
-        cliente: item.cliente?.nombrecompleto || 'Cliente sin nombre',
-        comentarios: item.comentarios || '',
-        fecha: item.fechareserva,
-        estado: (item.estado || 'pendiente').toLowerCase(),
-        pago: Array.isArray(item.pago) ? item.pago[0] : item.pago
-      }))
+      const pagos = pagosRes.data ?? []
+      const pagosPorActividad = pagos.reduce((acc, pago) => {
+        if (!pago?.idactividad) return acc
+        acc.add(Number(pago.idactividad))
+        return acc
+      }, new Set())
+
+      const formatted = actividades.map(item => {
+        const clienteNombre = item.cliente?.username || 'Cliente sin nombre'
+        const fechaAgenda = item.agenda?.fecha || null
+        const estado = (item.estado_pago || 'Pendiente').toLowerCase()
+        const pago = Array.isArray(item.pago) ? item.pago[0] : item.pago
+        return {
+          id: item.id,
+          cliente: clienteNombre,
+          comentarios: item.nombre_actividad || item.paquete?.nombre_paquete || '',
+          fecha: fechaAgenda,
+          estado,
+          paquete: item.paquete?.nombre_paquete || 'Paquete sin asignar',
+          pago: pago || (pagosPorActividad.has(Number(item.id)) ? { id: item.id } : null)
+        }
+      })
 
       const sortedByFechaDesc = formatted
         .slice()
@@ -121,13 +140,18 @@ export default function AdminDashboard(){
 
       setReservas(sortedByFechaDesc.slice(0, 5))
       setProximas(upcoming.slice(0, 5))
+      const roles = rolesRes.data ?? []
+      const usuarios = usuariosRes.data ?? []
+      const rolFotografo = roles.find(rol => rol.nombre?.toLowerCase() === 'fotografo' || rol.nombre?.toLowerCase() === 'fotógrafo')
+      const fotografos = usuarios.filter(usuario => rolFotografo && Number(usuario.idRol) === Number(rolFotografo.id))
+
       setStats({
         reservas: actividades.length,
         pendientes: formatted.filter(item => item.estado === 'pendiente').length,
-        pagos: pagosRes.data?.length ?? 0,
+        pagos: pagos.length,
         clientes: clientesRes.data?.length ?? 0,
-        fotografos: fotografosRes.data?.length ?? 0,
-        servicios: serviciosRes.data?.length ?? 0,
+        fotografos: fotografos.length,
+        servicios: eventosRes.data?.length ?? 0,
         paquetes: paquetesRes.data?.length ?? 0,
         resenas: resenasRes.data?.length ?? 0
       })

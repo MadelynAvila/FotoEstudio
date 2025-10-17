@@ -14,8 +14,8 @@ export default function Booking(){
     const loadPaquetes = async () => {
       const { data, error: paquetesError } = await supabase
         .from('paquete')
-        .select('id, nombre')
-        .order('nombre', { ascending: true })
+        .select('id, nombre_paquete')
+        .order('nombre_paquete', { ascending: true })
       if (paquetesError) {
         console.error('No se pudieron cargar los paquetes', paquetesError)
       } else {
@@ -41,22 +41,86 @@ export default function Booking(){
 
     try {
       setEnviando(true)
-      const fechaReserva = form.fecha ? new Date(`${form.fecha}T00:00:00`).toISOString() : null
 
-      const { data: cliente, error: clienteError } = await supabase
+      const { data: rolesData, error: rolesError } = await supabase
+        .from('rol')
+        .select('id, nombre')
+
+      if (rolesError) {
+        console.error('No se pudieron obtener los roles', rolesError)
+        setError('Ocurrió un problema al procesar tu reserva. Intenta nuevamente más tarde.')
+        return
+      }
+
+      const rolCliente = rolesData?.find(rol => rol.nombre?.toLowerCase() === 'cliente')
+      const rolFotografo = rolesData?.find(rol => rol.nombre?.toLowerCase() === 'fotografo' || rol.nombre?.toLowerCase() === 'fotógrafo')
+
+      const { data: usuarioData, error: usuarioError } = await supabase
+        .from('usuario')
+        .insert([
+          {
+            username: form.nombre,
+            telefono: form.telefono || null,
+            idRol: rolCliente?.id ?? null
+          }
+        ])
+        .select('id')
+        .single()
+
+      if (usuarioError || !usuarioData) {
+        console.error('No se pudo crear el usuario del cliente', usuarioError)
+        setError('No pudimos registrar tus datos en este momento. Intenta nuevamente más tarde.')
+        return
+      }
+
+      const { data: clienteData, error: clienteError } = await supabase
         .from('cliente')
         .insert([
           {
-            nombrecompleto: form.nombre,
-            telefono: form.telefono || null
+            idusuario: usuarioData.id,
+            Descuento: 0
           }
         ])
-        .select('id, nombrecompleto, telefono')
+        .select('idcliente')
         .single()
 
-      if (clienteError) {
-        console.error('No se pudo registrar el cliente', clienteError)
+      if (clienteError || !clienteData) {
+        console.error('No se pudo registrar al cliente', clienteError)
         setError('No pudimos registrar tus datos en este momento. Intenta nuevamente más tarde.')
+        return
+      }
+
+      const { data: fotografoData, error: fotografoError } = await supabase
+        .from('usuario')
+        .select('id')
+        .eq('idRol', rolFotografo?.id ?? -1)
+        .limit(1)
+        .single()
+
+      if (fotografoError || !fotografoData) {
+        console.error('No se encontró un fotógrafo disponible', fotografoError)
+        setError('Actualmente no tenemos disponibilidad para agendar tu sesión. Intenta más tarde.')
+        return
+      }
+
+      const fecha = form.fecha
+      const agendaPayload = {
+        idfotografo: fotografoData.id,
+        fecha,
+        horainicio: '09:00:00',
+        horafin: '10:00:00',
+        disponible: false
+      }
+
+      const { data: agendaData, error: agendaError } = await supabase
+        .from('agenda')
+        .insert([agendaPayload])
+        .select('id')
+        .single()
+
+      if (agendaError || !agendaData) {
+        console.error('No se pudo crear la agenda para la actividad', agendaError)
+        setError('No pudimos registrar tu reserva. Intenta nuevamente más tarde.')
         return
       }
 
@@ -64,16 +128,18 @@ export default function Booking(){
         .from('actividad')
         .insert([
           {
-            idcliente: cliente.id,
-            comentarios: form.paquete ? `Paquete solicitado: ${form.paquete}` : null,
-            estado: 'pendiente',
-            fechareserva: fechaReserva
+            idcliente: usuarioData.id,
+            idagenda: agendaData.id,
+            idpaquete: Number(form.paqueteId),
+            estado_pago: 'Pendiente',
+            nombre_actividad: form.nombre,
+            ubicacion: null
           }
         ])
 
       if (actividadError) {
-        console.error('No se pudo registrar la reserva', actividadError)
-        setError('No pudimos guardar tu reserva. Intenta nuevamente más tarde.')
+        console.error('No se pudo registrar la actividad', actividadError)
+        setError('No pudimos registrar tu reserva. Intenta nuevamente más tarde.')
       } else {
         setMensaje('Reserva enviada con éxito ✅')
         setForm(initialForm)
@@ -106,7 +172,7 @@ export default function Booking(){
         >
           <option value="">Selecciona un paquete disponible</option>
           {paquetes.map(paquete => (
-            <option key={paquete.id} value={paquete.id}>{paquete.nombre}</option>
+            <option key={paquete.id} value={paquete.id}>{paquete.nombre_paquete}</option>
           ))}
         </select>
         <input

@@ -10,26 +10,49 @@ export default function AdminClients(){
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState({ type: '', message: '' })
+  const [rolClienteId, setRolClienteId] = useState(null)
 
   const fetchClientes = async () => {
     setLoading(true)
     const { data, error } = await supabase
       .from('cliente')
-      .select('id, nombrecompleto, telefono, correo, fecharegistro')
-      .order('fecharegistro', { ascending: false })
+      .select('idcliente, Descuento, usuario:usuario ( id, username, telefono, correo, fecha_registro )')
+      .order('idcliente', { ascending: false })
 
     if (error) {
       console.error('No se pudieron cargar los clientes', error)
       setClientes([])
       setFeedback({ type: 'error', message: 'No pudimos cargar los clientes. Revisa Supabase.' })
     } else {
-      setClientes(data ?? [])
+      const formatted = (data ?? []).map(item => ({
+        id: item.idcliente,
+        usuarioId: item.usuario?.id,
+        nombrecompleto: item.usuario?.username || 'Cliente sin nombre',
+        telefono: item.usuario?.telefono || '',
+        correo: item.usuario?.correo || '',
+        fecharegistro: item.usuario?.fecha_registro,
+        descuento: item.Descuento ?? 0
+      }))
+      setClientes(formatted)
       setFeedback({ type: '', message: '' })
     }
     setLoading(false)
   }
 
+  const fetchRolCliente = async () => {
+    const { data, error } = await supabase.from('rol').select('id, nombre')
+    if (error) {
+      console.error('No se pudo obtener el rol de cliente', error)
+      return
+    }
+    const rol = data?.find(item => item.nombre?.toLowerCase() === 'cliente')
+    if (rol) {
+      setRolClienteId(rol.id)
+    }
+  }
+
   useEffect(() => {
+    fetchRolCliente()
     fetchClientes()
   }, [])
 
@@ -51,15 +74,24 @@ export default function AdminClients(){
     }
 
     setSaving(true)
+
     if (form.id) {
+      const clienteActual = clientes.find(cliente => cliente.id === form.id)
+      if (!clienteActual?.usuarioId) {
+        setFeedback({ type: 'error', message: 'No se pudo identificar el usuario asociado.' })
+        setSaving(false)
+        return
+      }
+
       const { error } = await supabase
-        .from('cliente')
+        .from('usuario')
         .update({
-          nombrecompleto: form.nombrecompleto,
+          username: form.nombrecompleto,
           telefono: form.telefono || null,
           correo: form.correo || null
         })
-        .eq('id', form.id)
+        .eq('id', clienteActual.usuarioId)
+
       if (error) {
         console.error('No se pudo actualizar el cliente', error)
         setFeedback({ type: 'error', message: 'No se pudo actualizar al cliente.' })
@@ -69,22 +101,48 @@ export default function AdminClients(){
         fetchClientes()
       }
     } else {
-      const { error } = await supabase
-        .from('cliente')
-        .insert([{
-          nombrecompleto: form.nombrecompleto,
-          telefono: form.telefono || null,
-          correo: form.correo || null
-        }])
-      if (error) {
-        console.error('No se pudo crear el cliente', error)
-        setFeedback({ type: 'error', message: 'No se pudo crear el cliente.' })
-      } else {
-        setFeedback({ type: 'success', message: 'Cliente creado correctamente.' })
-        resetForm()
-        fetchClientes()
+      if (!rolClienteId) {
+        setFeedback({ type: 'error', message: 'No se pudo determinar el rol de cliente. Revisa la configuración de roles.' })
+        setSaving(false)
+        return
       }
+
+      const { data: usuarioData, error: usuarioError } = await supabase
+        .from('usuario')
+        .insert([
+          {
+            username: form.nombrecompleto,
+            telefono: form.telefono || null,
+            correo: form.correo || null,
+            idRol: rolClienteId
+          }
+        ])
+        .select('id')
+        .single()
+
+      if (usuarioError || !usuarioData) {
+        console.error('No se pudo crear el usuario del cliente', usuarioError)
+        setFeedback({ type: 'error', message: 'No se pudo crear el cliente.' })
+        setSaving(false)
+        return
+      }
+
+      const { error: clienteError } = await supabase
+        .from('cliente')
+        .insert([{ idusuario: usuarioData.id, Descuento: 0 }])
+
+      if (clienteError) {
+        console.error('No se pudo crear el registro de cliente', clienteError)
+        setFeedback({ type: 'error', message: 'No se pudo crear el cliente.' })
+        setSaving(false)
+        return
+      }
+
+      setFeedback({ type: 'success', message: 'Cliente creado correctamente.' })
+      resetForm()
+      fetchClientes()
     }
+
     setSaving(false)
   }
 
@@ -99,14 +157,23 @@ export default function AdminClients(){
 
   const onDelete = async (id) => {
     if (!window.confirm('¿Eliminar este cliente?')) return
-    const { error } = await supabase.from('cliente').delete().eq('id', id)
-    if (error) {
-      console.error('No se pudo eliminar el cliente', error)
+
+    const clienteActual = clientes.find(cliente => cliente.id === id)
+    if (!clienteActual) return
+
+    const { error: clienteError } = await supabase.from('cliente').delete().eq('idcliente', id)
+    if (clienteError) {
+      console.error('No se pudo eliminar el cliente', clienteError)
       setFeedback({ type: 'error', message: 'No se pudo eliminar el cliente seleccionado.' })
-    } else {
-      setClientes(prev => prev.filter(cliente => cliente.id !== id))
-      if (form.id === id) resetForm()
+      return
     }
+
+    if (clienteActual.usuarioId) {
+      await supabase.from('usuario').delete().eq('id', clienteActual.usuarioId)
+    }
+
+    setClientes(prev => prev.filter(cliente => cliente.id !== id))
+    if (form.id === id) resetForm()
   }
 
   return (
@@ -164,7 +231,7 @@ export default function AdminClients(){
         </div>
         <div className="lg:w-[320px]">
           <AdminHelpCard title="Consejos para clientes">
-            <p>Utiliza esta sección para mantener actualizados los datos de contacto. Así podrás comunicarse fácilmente al confirmar una sesión.</p>
+            <p>Utiliza esta sección para mantener actualizados los datos de contacto. Así podrás comunicarte fácilmente al confirmar una sesión.</p>
             <p>El correo electrónico es opcional, pero ayuda a enviar confirmaciones y facturas.</p>
             <p>Si eliminas a un cliente que tenga reservas activas, deberás actualizar esas reservas manualmente.</p>
           </AdminHelpCard>
@@ -206,7 +273,7 @@ export default function AdminClients(){
             </table>
           </div>
         ) : (
-          <p className="muted text-sm">No hay clientes registrados todavía.</p>
+          <p className="muted text-sm">No has registrado clientes todavía.</p>
         )}
       </div>
     </div>

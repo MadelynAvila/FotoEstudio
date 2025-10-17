@@ -94,12 +94,13 @@ const AUTH_USER_SELECT = `
   id,
   username,
   correo,
+  telefono,
   contrasena_hash,
-  estado,
-  idrol,
-  rol:rol(id, nombre, descripcion),
-  cliente:cliente(id, nombrecompleto, telefono, correo),
-  fotografo:fotografo(id, nombrecompleto, telefono, correo, especialidad, estado)
+  idRol,
+  idestado,
+  rol:rol!usuario_idRol_fkey(id, nombre, descripcion),
+  estado:estado_usuario!usuario_idestado_fkey(id, nombre_estado, descripcion_estado),
+  cliente:cliente!cliente_idusuario_fkey(idcliente, Descuento)
 `;
 
 const hashPasswordWithDatabase = async (password) => {
@@ -168,7 +169,8 @@ export function AuthProvider({ children }) {
       }
 
       if (!userRecord) return { ok: false, error: 'Credenciales inválidas o usuario inactivo.' };
-      if ((userRecord.estado ?? '').toLowerCase() !== 'activo') {
+      const estadoActual = userRecord.estado?.nombre_estado ?? userRecord.estado ?? ''
+      if (estadoActual && estadoActual.toLowerCase() !== 'activo') {
         return { ok: false, error: 'Credenciales inválidas o usuario inactivo.' };
       }
 
@@ -179,11 +181,8 @@ export function AuthProvider({ children }) {
         ...userRecord,
         role: userRecord.rol?.nombre ?? userRecord.role ?? userRecord.rol,
         rol: userRecord.rol?.nombre ?? userRecord.rol,
-        nombre:
-          userRecord?.cliente?.nombrecompleto ??
-          userRecord?.fotografo?.nombrecompleto ??
-          userRecord.username,
-        nombrecompleto: userRecord?.cliente?.nombrecompleto ?? userRecord?.fotografo?.nombrecompleto,
+        nombre: userRecord.username,
+        nombrecompleto: userRecord.username,
       };
 
       const normalized = mapUserPayload(safePayload) ?? safePayload;
