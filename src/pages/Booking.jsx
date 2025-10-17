@@ -12,6 +12,18 @@ const horaATotalMinutos = (hora) => {
   return h * 60 + m
 }
 
+/** Convierte una hora a formato HH:MM:SS */
+const formatearHoraSQL = (hora) => {
+  if (!hora) return null
+  const [horas, minutos] = hora.split(':')
+  const h = Number(horas)
+  const m = Number(minutos ?? 0)
+  if (Number.isNaN(h) || Number.isNaN(m)) return null
+  const hh = String(h).padStart(2, '0')
+  const mm = String(m).padStart(2, '0')
+  return `${hh}:${mm}:00`
+}
+
 /** Normaliza fecha para que siempre quede en formato YYYY-MM-DD */
 const normalizarFechaInput = (valor) => {
   if (!valor) return ''
@@ -155,8 +167,15 @@ export default function Booking() {
       }
 
       const fechaSeleccionada = normalizarFechaInput(form.fecha)
-      const rangoDia = obtenerRangoDiaUTC(fechaSeleccionada)
-      if (!rangoDia) {
+      if (!fechaSeleccionada) {
+        setDisponibilidadFotografos({})
+        setAgendaDisponiblePorFotografo({})
+        return
+      }
+
+      const horaInicioSQL = formatearHoraSQL(form.horaInicio)
+      const horaFinSQL = formatearHoraSQL(form.horaFin)
+      if (!horaInicioSQL || !horaFinSQL) {
         setDisponibilidadFotografos({})
         setAgendaDisponiblePorFotografo({})
         return
@@ -173,8 +192,10 @@ export default function Booking() {
         .from('agenda')
         .select('id, idfotografo, fecha, horainicio, horafin, disponible')
         .in('idfotografo', idsFotografos)
-        .gte('fecha', rangoDia.inicio)
-        .lt('fecha', rangoDia.fin)
+        .eq('fecha', fechaSeleccionada)
+        .eq('disponible', true)
+        .lte('horainicio', horaInicioSQL)
+        .gte('horafin', horaFinSQL)
 
       if (agendaError) {
         console.error('Error al consultar agenda:', agendaError)
@@ -185,32 +206,19 @@ export default function Booking() {
 
       const mapaDisponibilidad = {}
       const mapaAgenda = {}
-      const agendasPorFotografo = new Map()
-
-      ;(agendas ?? []).forEach(slot => {
-        const fechaSlot = normalizarFechaInput(slot.fecha)
-        if (fechaSlot !== fechaSeleccionada) return
-        if (!agendasPorFotografo.has(slot.idfotografo))
-          agendasPorFotografo.set(slot.idfotografo, [])
-        agendasPorFotografo.get(slot.idfotografo).push(slot)
-      })
 
       fotografosList.forEach(fotografo => {
-        const slots = agendasPorFotografo.get(fotografo.id) ?? []
-        const disponibles = slots.filter(s => s.disponible)
-        const bloque = disponibles.find(s => {
-          const ini = horaATotalMinutos(s.horainicio)
-          const fin = horaATotalMinutos(s.horafin)
-          return ini !== null && fin !== null && ini <= inicioCliente && finCliente <= fin
-        })
+        mapaDisponibilidad[fotografo.id] = false
+      })
 
-        if (!bloque) {
-          mapaDisponibilidad[fotografo.id] = false
-          return
+      ;(agendas ?? []).forEach(slot => {
+        const ini = horaATotalMinutos(slot.horainicio)
+        const fin = horaATotalMinutos(slot.horafin)
+        if (ini === null || fin === null) return
+        if (ini <= inicioCliente && finCliente <= fin) {
+          mapaDisponibilidad[slot.idfotografo] = true
+          mapaAgenda[slot.idfotografo] = slot.id
         }
-
-        mapaDisponibilidad[fotografo.id] = true
-        mapaAgenda[fotografo.id] = bloque.id
       })
 
       if (cancelado) return
@@ -396,7 +404,7 @@ export default function Booking() {
     mensajeFotografo = 'Hay fotógrafos disponibles. Completa el formulario para continuar.'
     estadoFotografo = 'success'
   } else {
-    mensajeFotografo = 'No hay fotógrafos disponibles. Elige otro horario.'
+    mensajeFotografo = 'No hay fotógrafos disponibles'
     estadoFotografo = 'alert'
   }
 
