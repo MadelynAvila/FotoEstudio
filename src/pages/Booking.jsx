@@ -153,26 +153,24 @@ export default function Booking() {
 
       fotografosList.forEach(fotografo => {
         const slots = agendasPorFotografo.get(fotografo.id) ?? []
-        if (!slots.length) {
-          mapaDisponibilidad[fotografo.id] = false
-          return
-        }
+        const bloquesDisponibles = slots.filter(slot => slot.disponible === true)
+        const bloquesNoDisponibles = slots.filter(slot => slot.disponible === false)
 
-        const tieneHorarioDisponible = slots.some(slot => {
-          if (slot.disponible !== true) return false
+        const coincideConBloqueDisponible = bloquesDisponibles.some(slot => {
           const inicioAgenda = horaATotalMinutos(slot.horainicio)
           const finAgenda = horaATotalMinutos(slot.horafin)
           if (inicioAgenda === null || finAgenda === null) return false
           return inicioAgenda <= inicioCliente && finCliente <= finAgenda
         })
 
+        const tieneHorarioDisponible = coincideConBloqueDisponible || bloquesDisponibles.length === 0
+
         if (!tieneHorarioDisponible) {
           mapaDisponibilidad[fotografo.id] = false
           return
         }
 
-        const tieneConflictos = slots.some(slot => {
-          if (slot.disponible !== false) return false
+        const tieneConflictos = bloquesNoDisponibles.some(slot => {
           const inicioAgenda = horaATotalMinutos(slot.horainicio)
           const finAgenda = horaATotalMinutos(slot.horafin)
           if (inicioAgenda === null || finAgenda === null) return false
