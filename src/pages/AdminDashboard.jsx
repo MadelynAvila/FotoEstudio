@@ -36,21 +36,8 @@ export default function AdminDashboard(){
     let active = true
 
     const fetchServicios = async () => {
-      const response = await supabase.from('servicio').select('id')
-      const notFound =
-        response.error?.code === '42P01' ||
-        response.error?.code === 'PGRST404' ||
-        response.error?.message?.includes('404')
-
-      if (notFound) {
-        console.warn(
-          '[Dashboard] La tabla "servicio" no está disponible. Se usará "tipo_evento" como respaldo.',
-          response.error
-        )
-        const fallback = await supabase.from('tipo_evento').select('id')
-        return { ...fallback, _source: 'tipo_evento' }
-      }
-      return { ...response, _source: 'servicio' }
+      const response = await supabase.from('tipo_evento').select('id')
+      return { ...response, _source: 'tipo_evento' }
     }
 
     const load = async () => {
@@ -108,7 +95,7 @@ export default function AdminDashboard(){
       trackError('actividad', actividadesRes.error)
       trackError('pago', pagosRes.error)
       trackError('usuario', usuariosRes.error)
-      trackError(serviciosResponse._source || 'servicio', serviciosResponse.error)
+      trackError(serviciosResponse._source || 'tipo_evento', serviciosResponse.error)
       trackError('paquete', paquetesRes.error)
       trackError('resena', resenasRes.error)
 
