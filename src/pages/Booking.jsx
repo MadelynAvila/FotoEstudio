@@ -2,22 +2,45 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/authContext'
 import { supabase } from '../lib/supabaseClient'
 
-const initialForm = { nombre: '', telefono: '', correo: '', paqueteId: '', fecha: '' }
+const horaATotalMinutos = (hora) => {
+  if (!hora) return null
+  const [horas, minutos] = hora.split(':')
+  const h = Number(horas)
+  const m = Number(minutos ?? 0)
+  if (Number.isNaN(h) || Number.isNaN(m)) return null
+  return h * 60 + m
+}
 
-export default function Booking(){
+const initialForm = {
+  nombre: '',
+  telefono: '',
+  correo: '',
+  paqueteId: '',
+  fecha: '',
+  horaInicio: '',
+  horaFin: '',
+  ubicacion: '',
+  formaPago: '',
+  fotografoId: ''
+}
+
+export default function Booking() {
   const [form, setForm] = useState(initialForm)
   const [paquetes, setPaquetes] = useState([])
   const [mensaje, setMensaje] = useState('')
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [prefilled, setPrefilled] = useState(false)
+  const [fotografos, setFotografos] = useState([])
+  const [disponibilidadFotografos, setDisponibilidadFotografos] = useState({})
   const { user } = useAuth()
 
+  // Cargar paquetes
   useEffect(() => {
     const loadPaquetes = async () => {
       const { data, error: paquetesError } = await supabase
         .from('paquete')
-        .select('id, nombre_paquete')
+        .select('id, nombre_paquete, precio')
         .order('nombre_paquete', { ascending: true })
       if (paquetesError) {
         console.error('No se pudieron cargar los paquetes', paquetesError)
@@ -28,6 +51,38 @@ export default function Booking(){
     loadPaquetes()
   }, [])
 
+  // Cargar fotógrafos
+  useEffect(() => {
+    const loadFotografos = async () => {
+      const { data: rolFotografo, error: rolFotografoError } = await supabase
+        .from('rol')
+        .select('id, nombre')
+        .ilike('nombre', 'fotogra%')
+        .maybeSingle()
+
+      if (rolFotografoError || !rolFotografo) {
+        console.error('No se pudo obtener el rol de fotógrafo', rolFotografoError)
+        return
+      }
+
+      const { data: fotografoData, error: fotografoError } = await supabase
+        .from('usuario')
+        .select('id, username')
+        .eq('idrol', rolFotografo.id)
+        .order('username', { ascending: true })
+
+      if (fotografoError) {
+        console.error('No se pudieron cargar los fotógrafos', fotografoError)
+        return
+      }
+
+      setFotografos(fotografoData ?? [])
+    }
+
+    loadFotografos()
+  }, [])
+
+  // Prefill de datos de usuario
   useEffect(() => {
     if (user && !prefilled) {
       const nombreUsuario = user.name ?? user.nombre ?? user.username ?? ''
@@ -53,6 +108,55 @@ export default function Booking(){
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
+  // Evaluar disponibilidad de fotógrafos
+  useEffect(() => {
+    const evaluarDisponibilidad = async () => {
+      if (!form.fecha || !form.horaInicio || !form.horaFin || fotografos.length === 0) {
+        setDisponibilidadFotografos({})
+        return
+      }
+
+      const inicioCliente = horaATotalMinutos(form.horaInicio)
+      const finCliente = horaATotalMinutos(form.horaFin)
+
+      if (inicioCliente === null || finCliente === null || inicioCliente >= finCliente) {
+        setDisponibilidadFotografos({})
+        return
+      }
+
+      const { data: agendas, error: agendaError } = await supabase
+        .from('agenda')
+        .select('idfotografo, horainicio, horafin, disponible')
+        .eq('fecha', form.fecha)
+
+      if (agendaError) {
+        console.error('No se pudo consultar la disponibilidad de fotógrafos', agendaError)
+        setDisponibilidadFotografos({})
+        return
+      }
+
+      const ocupado = new Set()
+      (agendas ?? []).forEach(slot => {
+        const inicioAgenda = horaATotalMinutos(slot.horainicio)
+        const finAgenda = horaATotalMinutos(slot.horafin)
+        const reservado = slot.disponible === false
+        if (reservado && inicioAgenda < finCliente && inicioCliente < finAgenda) {
+          ocupado.add(slot.idfotografo)
+        }
+      })
+
+      const mapaDisponibilidad = {}
+      fotografos.forEach(f => {
+        mapaDisponibilidad[f.id] = !ocupado.has(f.id)
+      })
+
+      setDisponibilidadFotografos(mapaDisponibilidad)
+    }
+
+    evaluarDisponibilidad()
+  }, [form.fecha, form.horaInicio, form.horaFin, fotografos])
+
+  // Envío del formulario
   const handleSubmit = async (e) => {
     e.preventDefault()
     setMensaje('')
@@ -63,20 +167,30 @@ export default function Booking(){
       return
     }
 
-    const nombre = (form.nombre ?? '').trim()
-    const telefono = (form.telefono ?? '').trim()
-    const correo = (form.correo ?? '').trim()
-    const paqueteId = form.paqueteId
-    const fechaReserva = form.fecha
+    const { nombre, telefono, correo, paqueteId, fecha, horaInicio, horaFin, ubicacion, formaPago, fotografoId } = form
 
-    if (!nombre || !telefono || !correo || !paqueteId || !fechaReserva) {
+    if (!nombre || !telefono || !correo || !paqueteId || !fecha || !horaInicio || !horaFin || !ubicacion || !formaPago || !fotografoId) {
       setError('Por favor completa todos los campos antes de enviar la reserva.')
+      return
+    }
+
+    const minutosInicio = horaATotalMinutos(horaInicio)
+    const minutosFin = horaATotalMinutos(horaFin)
+
+    if (minutosInicio === null || minutosFin === null || minutosInicio >= minutosFin) {
+      setError('La hora de fin debe ser posterior a la hora de inicio.')
+      return
+    }
+
+    if (disponibilidadFotografos[fotografoId] === false) {
+      setError('El fotógrafo seleccionado no está disponible en ese horario.')
       return
     }
 
     try {
       setEnviando(true)
 
+      // Validar cliente
       const { data: clienteExistente, error: clienteSelectError } = await supabase
         .from('cliente')
         .select('idcliente')
@@ -84,70 +198,68 @@ export default function Booking(){
         .maybeSingle()
 
       if (clienteSelectError) {
-        console.error('No se pudo verificar el registro de cliente', clienteSelectError)
-        setError('No pudimos validar tu cuenta en este momento. Intenta nuevamente más tarde.')
+        console.error('No se pudo verificar el cliente', clienteSelectError)
+        setError('Error validando tu cuenta. Intenta nuevamente más tarde.')
         return
       }
 
       if (!clienteExistente) {
         const { error: crearClienteError } = await supabase
           .from('cliente')
-          .insert([
-            {
-              idusuario: user.id,
-              Descuento: 0
-            }
-          ])
+          .insert([{ idusuario: user.id, Descuento: 0 }])
 
         if (crearClienteError) {
-          console.error('No se pudo registrar al cliente', crearClienteError)
-          setError('No pudimos registrar tus datos en este momento. Intenta nuevamente más tarde.')
+          console.error('Error al registrar cliente', crearClienteError)
+          setError('No pudimos registrar tus datos. Intenta más tarde.')
           return
         }
       }
 
-      const { data: rolFotografo, error: rolFotografoError } = await supabase
-        .from('rol')
-        .select('id, nombre')
-        .ilike('nombre', 'fotogra%')
-        .maybeSingle()
+      // Validar conflicto en agenda
+      const { data: agendaExistente, error: agendaExistenteError } = await supabase
+        .from('agenda')
+        .select('id, horainicio, horafin, disponible')
+        .eq('fecha', fecha)
+        .eq('idfotografo', Number(fotografoId))
 
-      if (rolFotografoError || !rolFotografo) {
-        console.error('No se pudo obtener el rol de fotógrafo', rolFotografoError)
-        setError('Actualmente no tenemos disponibilidad para agendar tu sesión. Intenta más tarde.')
+      if (agendaExistenteError) {
+        console.error('Error verificando disponibilidad del fotógrafo', agendaExistenteError)
+        setError('No pudimos confirmar la disponibilidad del fotógrafo.')
         return
       }
 
-      const { data: fotografoData, error: fotografoError } = await supabase
-        .from('usuario')
-        .select('id, username')
-        .eq('idrol', rolFotografo.id)
-        .limit(1)
-        .single()
+      const hayConflicto = (agendaExistente ?? []).some(slot => {
+        if (slot.disponible === false) {
+          const inicioAgenda = horaATotalMinutos(slot.horainicio)
+          const finAgenda = horaATotalMinutos(slot.horafin)
+          return inicioAgenda < minutosFin && minutosInicio < finAgenda
+        }
+        return false
+      })
 
-      if (fotografoError || !fotografoData) {
-        console.error('No se encontró un fotógrafo disponible', fotografoError)
-        setError('Actualmente no tenemos disponibilidad para agendar tu sesión. Intenta más tarde.')
+      if (hayConflicto) {
+        setError('El fotógrafo ya tiene una reserva en ese horario.')
         return
       }
 
-      const agendaPayload = {
-        idfotografo: fotografoData.id,
-        fecha: fechaReserva,
-        horainicio: '09:00:00',
-        horafin: '10:00:00',
-        disponible: false
-      }
-
+      // Crear agenda
       const { data: agendaData, error: agendaError } = await supabase
         .from('agenda')
-        .insert([agendaPayload])
+        .insert([
+          {
+            idfotografo: Number(fotografoId),
+            fecha,
+            horainicio: `${horaInicio}:00`,
+            horafin: `${horaFin}:00`,
+            disponible: false
+          }
+        ])
         .select('id')
         .single()
 
       if (agendaError || !agendaData) {
-        console.error('No se pudo crear la agenda para la actividad', agendaError)
-        setError('No pudimos registrar tu reserva. Intenta nuevamente más tarde.')
+        console.error('Error creando agenda', agendaError)
+        setError('No se pudo registrar la agenda.')
         return
       }
 
@@ -156,7 +268,8 @@ export default function Booking(){
         ? `${paqueteSeleccionado.nombre_paquete} - ${nombre}`
         : nombre
 
-      const { error: actividadError } = await supabase
+      // Crear actividad
+      const { data: actividadData, error: actividadError } = await supabase
         .from('actividad')
         .insert([
           {
@@ -165,22 +278,44 @@ export default function Booking(){
             idpaquete: Number(paqueteId),
             estado_pago: 'Pendiente',
             nombre_actividad: nombreActividad,
-            ubicacion: null
+            ubicacion
+          }
+        ])
+        .select('id')
+        .single()
+
+      if (actividadError || !actividadData) {
+        console.error('Error creando actividad', actividadError)
+        setError('No se pudo registrar la actividad.')
+        return
+      }
+
+      // Registrar pago pendiente
+      const montoReserva = paqueteSeleccionado?.precio ?? 0
+      const { error: pagoError } = await supabase
+        .from('pago')
+        .insert([
+          {
+            idactividad: actividadData.id,
+            metodo_pago: formaPago,
+            monto: montoReserva,
+            detalle_pago: 'Pago pendiente registrado desde el panel web'
           }
         ])
 
-      if (actividadError) {
-        console.error('No se pudo registrar la actividad', actividadError)
-        setError('No pudimos registrar tu reserva. Intenta nuevamente más tarde.')
+      if (pagoError) {
+        console.error('Error al registrar el pago', pagoError)
+        setMensaje('Reserva enviada con éxito, pero no se pudo registrar el pago.')
       } else {
         setMensaje('Reserva enviada con éxito ✅')
-        setForm({
-          ...initialForm,
-          nombre,
-          telefono,
-          correo
-        })
       }
+
+      setForm({
+        ...initialForm,
+        nombre,
+        telefono,
+        correo
+      })
     } finally {
       setEnviando(false)
     }
@@ -190,56 +325,69 @@ export default function Booking(){
     <div className="container-1120 py-6">
       <h2 className="text-2xl font-display mb-4">Reservar sesión</h2>
       {!user && (
-        <div className="mb-4 rounded-xl2 border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900">
+        <div className="mb-4 border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900 rounded-xl2">
           Debes iniciar sesión o registrarte para completar una reserva.
         </div>
       )}
       <form onSubmit={handleSubmit} className="card p-4 grid gap-3 max-w-3xl">
-        <input
-          placeholder="Nombre"
-          value={form.nombre}
-          onChange={e => updateField('nombre', e.target.value)}
-          className="border rounded-xl2 px-3 py-2"
-          disabled={!user || enviando}
-        />
-        <input
-          placeholder="Teléfono"
-          value={form.telefono}
-          onChange={e => updateField('telefono', e.target.value)}
-          className="border rounded-xl2 px-3 py-2"
-          disabled={!user || enviando}
-        />
-        <input
-          placeholder="Correo electrónico"
-          value={form.correo}
-          onChange={e => updateField('correo', e.target.value)}
-          className="border rounded-xl2 px-3 py-2"
-          disabled={!user || enviando}
-        />
-        <select
-          value={form.paqueteId}
-          onChange={e => updateField('paqueteId', e.target.value)}
-          className="border rounded-xl2 px-3 py-2"
-          disabled={!user || enviando}
-        >
+        <input placeholder="Nombre" value={form.nombre} onChange={e => updateField('nombre', e.target.value)} className="border rounded-xl2 px-3 py-2" disabled={!user || enviando} />
+        <input placeholder="Teléfono" value={form.telefono} onChange={e => updateField('telefono', e.target.value)} className="border rounded-xl2 px-3 py-2" disabled={!user || enviando} />
+        <input placeholder="Correo electrónico" value={form.correo} onChange={e => updateField('correo', e.target.value)} className="border rounded-xl2 px-3 py-2" disabled={!user || enviando} />
+        <select value={form.paqueteId} onChange={e => updateField('paqueteId', e.target.value)} className="border rounded-xl2 px-3 py-2" disabled={!user || enviando}>
           <option value="">Selecciona un paquete disponible</option>
           {paquetes.map(paquete => (
-            <option key={paquete.id} value={paquete.id}>{paquete.nombre_paquete}</option>
+            <option key={paquete.id} value={paquete.id}>
+              {paquete.nombre_paquete} {paquete.precio != null ? `- $${paquete.precio}` : ''}
+            </option>
           ))}
         </select>
-        <input
-          type="date"
-          value={form.fecha}
-          onChange={e => updateField('fecha', e.target.value)}
-          className="border rounded-xl2 px-3 py-2"
-          disabled={!user || enviando}
-        />
+
+        <input type="date" value={form.fecha} onChange={e => updateField('fecha', e.target.value)} className="border rounded-xl2 px-3 py-2" disabled={!user || enviando} />
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <input type="time" value={form.horaInicio} onChange={e => updateField('horaInicio', e.target.value)} className="border rounded-xl2 px-3 py-2" disabled={!user || enviando} />
+          <input type="time" value={form.horaFin} onChange={e => updateField('horaFin', e.target.value)} className="border rounded-xl2 px-3 py-2" disabled={!user || enviando} />
+        </div>
+
+        <input placeholder="Ubicación del servicio" value={form.ubicacion} onChange={e => updateField('ubicacion', e.target.value)} className="border rounded-xl2 px-3 py-2" disabled={!user || enviando} />
+
+        <select value={form.formaPago} onChange={e => updateField('formaPago', e.target.value)} className="border rounded-xl2 px-3 py-2" disabled={!user || enviando}>
+          <option value="">Selecciona la forma de pago</option>
+          <option value="Transferencia">Transferencia</option>
+          <option value="Tarjeta">Tarjeta</option>
+          <option value="Efectivo">Efectivo</option>
+        </select>
+
+        <select value={form.fotografoId} onChange={e => updateField('fotografoId', e.target.value)} className="border rounded-xl2 px-3 py-2" disabled={!user || enviando || fotografos.length === 0}>
+          <option value="">Selecciona un fotógrafo disponible</option>
+          {fotografos.map(fotografo => {
+            const disponible = disponibilidadFotografos[fotografo.id]
+            const etiqueta = disponible === undefined
+              ? 'Selecciona fecha y horario'
+              : disponible
+              ? 'Disponible'
+              : 'No disponible'
+            return (
+              <option key={fotografo.id} value={fotografo.id} disabled={disponible === false}>
+                {fotografo.username} ({etiqueta})
+              </option>
+            )
+          })}
+        </select>
+
+        {form.fecha && form.horaInicio && form.horaFin && fotografos.length > 0 && Object.keys(disponibilidadFotografos).length > 0 &&
+          !Object.values(disponibilidadFotografos).some(valor => valor) && (
+            <p className="text-sm text-red-600">No hay fotógrafos disponibles para el horario seleccionado.</p>
+          )}
+
         <button className="btn btn-primary" disabled={!user || enviando}>
           {enviando ? 'Enviando…' : 'Enviar'}
         </button>
       </form>
+
       {error && <p className="mt-2 text-red-600 text-sm">{error}</p>}
       {mensaje && <p className="mt-2 text-green-600">{mensaje}</p>}
     </div>
   )
 }
+
