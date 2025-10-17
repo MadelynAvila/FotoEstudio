@@ -75,6 +75,21 @@ export async function getActividadesFotografo(idFotografo) {
     return { data: [], error: null }
   }
 
+  const { data: agendas, error: agendaError } = await supabase
+    .from('agenda')
+    .select('id')
+    .eq('idfotografo', idFotografo)
+
+  if (agendaError) {
+    return { data: [], error: agendaError }
+  }
+
+  const agendaIds = (agendas ?? []).map(item => item.id)
+
+  if (!agendaIds.length) {
+    return { data: [], error: null }
+  }
+
   const { data, error } = await supabase
     .from('actividad')
     .select(`
@@ -82,28 +97,46 @@ export async function getActividadesFotografo(idFotografo) {
       nombre_actividad,
       ubicacion,
       estado_pago,
-      agenda:agenda!inner (
+      paquete:paquete (
         id,
-        idfotografo,
+        nombre_paquete,
+        precio
+      ),
+      agenda:agenda (
+        id,
         fecha,
         horainicio,
         horafin,
-        disponible
-      ),
-      paquete:paquete (
-        id,
-        nombre_paquete
+        idfotografo
       ),
       cliente:usuario!actividad_idcliente_fkey (
         id,
         username
       )
     `)
-    .eq('agenda.idfotografo', idFotografo)
-    .order('agenda.fecha', { ascending: true })
-    .order('agenda.horainicio', { ascending: true })
+    .in('idagenda', agendaIds)
+    .order('idagenda', { ascending: true })
 
-  return { data: data ?? [], error }
+  if (error) {
+    return { data: [], error }
+  }
+
+  const actividadesOrdenadas = [...(data ?? [])].sort((a, b) => {
+    const agendaA = Array.isArray(a.agenda) ? a.agenda[0] : a.agenda
+    const agendaB = Array.isArray(b.agenda) ? b.agenda[0] : b.agenda
+
+    const fechaA = agendaA?.fecha ? new Date(agendaA.fecha).getTime() : 0
+    const fechaB = agendaB?.fecha ? new Date(agendaB.fecha).getTime() : 0
+    if (fechaA !== fechaB) {
+      return fechaA - fechaB
+    }
+
+    const horaA = agendaA?.horainicio ? String(agendaA.horainicio) : ''
+    const horaB = agendaB?.horainicio ? String(agendaB.horainicio) : ''
+    return horaA.localeCompare(horaB)
+  })
+
+  return { data: actividadesOrdenadas, error: null }
 }
 
 export async function getResenasFotografo(idFotografo) {
