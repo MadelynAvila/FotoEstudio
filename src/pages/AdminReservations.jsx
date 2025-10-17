@@ -9,8 +9,26 @@ const defaultForm = {
   telefono: '',
   comentarios: '',
   fecha: '',
+  horaInicio: '',
+  horaFin: '',
+  ubicacion: '',
   estado: 'pendiente',
   paqueteId: ''
+}
+
+function horaATotalMinutos(value) {
+  if (!value) return null
+  const [horas = '0', minutos = '0'] = String(value).split(':')
+  const h = Number.parseInt(horas, 10)
+  const m = Number.parseInt(minutos, 10)
+  if (Number.isNaN(h) || Number.isNaN(m)) return null
+  return h * 60 + m
+}
+
+function formatearHoraParaDB(value) {
+  if (!value) return null
+  const [horas = '00', minutos = '00'] = String(value).split(':')
+  return `${horas.padStart(2, '0')}:${minutos.padStart(2, '0')}:00`
 }
 
 function formatEstado(value) {
@@ -139,13 +157,21 @@ export default function AdminReservations(){
     event.preventDefault()
     setFeedback({ type: '', message: '' })
 
-    if (!form.nombre || !form.fecha || !form.paqueteId) {
-      setFeedback({ type: 'error', message: 'El nombre del cliente, la fecha y el paquete son obligatorios.' })
+    if (!form.nombre || !form.fecha || !form.paqueteId || !form.horaInicio || !form.horaFin || !form.ubicacion) {
+      setFeedback({ type: 'error', message: 'Nombre, fecha, horario, paquete y ubicación son obligatorios.' })
       return
     }
 
     if (!rolClienteId) {
       setFeedback({ type: 'error', message: 'No se pudo determinar el rol de cliente. Revisa la configuración de roles.' })
+      return
+    }
+
+    const minutosInicio = horaATotalMinutos(form.horaInicio)
+    const minutosFin = horaATotalMinutos(form.horaFin)
+
+    if (minutosInicio === null || minutosFin === null || minutosInicio >= minutosFin) {
+      setFeedback({ type: 'error', message: 'El horario seleccionado no es válido. Revisa las horas de inicio y fin.' })
       return
     }
 
@@ -195,9 +221,30 @@ export default function AdminReservations(){
     const agendaPayload = {
       idfotografo: fotografoAsignado,
       fecha: form.fecha,
-      horainicio: '09:00:00',
-      horafin: '10:00:00',
+      horainicio: formatearHoraParaDB(form.horaInicio),
+      horafin: formatearHoraParaDB(form.horaFin),
       disponible: false
+    }
+
+    const { data: agendaExistente } = await supabase
+      .from('agenda')
+      .select('id, horainicio, horafin, disponible')
+      .eq('fecha', form.fecha)
+      .eq('idfotografo', fotografoAsignado)
+
+    const hayConflicto = (agendaExistente ?? []).some(item => {
+      if (item.disponible === false) {
+        const inicioAgenda = horaATotalMinutos(item.horainicio)
+        const finAgenda = horaATotalMinutos(item.horafin)
+        return inicioAgenda < minutosFin && minutosInicio < finAgenda
+      }
+      return false
+    })
+
+    if (hayConflicto) {
+      setFeedback({ type: 'error', message: 'El fotógrafo asignado ya tiene una actividad registrada en ese horario.' })
+      setSaving(false)
+      return
     }
 
     const { data: agendaData, error: agendaError } = await supabase
@@ -213,6 +260,13 @@ export default function AdminReservations(){
       return
     }
 
+    const nombrePaquete = paquetes.find(paquete => String(paquete.id) === String(form.paqueteId))?.nombre_paquete
+    const nombreActividad = form.comentarios
+      ? form.comentarios
+      : nombrePaquete
+        ? `Reserva para ${nombrePaquete}`
+        : 'Reserva creada desde el panel de administración'
+
     const { error: actividadError } = await supabase
       .from('actividad')
       .insert([
@@ -221,8 +275,8 @@ export default function AdminReservations(){
           idagenda: agendaData.id,
           idpaquete: Number(form.paqueteId),
           estado_pago: form.estado,
-          nombre_actividad: form.comentarios || null,
-          ubicacion: null
+          nombre_actividad: nombreActividad,
+          ubicacion: form.ubicacion
         }
       ])
 
@@ -304,6 +358,24 @@ export default function AdminReservations(){
               />
             </label>
             <label className="grid gap-1 text-sm">
+              <span className="font-medium text-slate-700">Hora de inicio *</span>
+              <input
+                type="time"
+                value={form.horaInicio}
+                onChange={e => updateField('horaInicio', e.target.value)}
+                className="border rounded-xl2 px-3 py-2"
+              />
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span className="font-medium text-slate-700">Hora de fin *</span>
+              <input
+                type="time"
+                value={form.horaFin}
+                onChange={e => updateField('horaFin', e.target.value)}
+                className="border rounded-xl2 px-3 py-2"
+              />
+            </label>
+            <label className="grid gap-1 text-sm">
               <span className="font-medium text-slate-700">Paquete *</span>
               <select
                 value={form.paqueteId}
@@ -315,6 +387,15 @@ export default function AdminReservations(){
                   <option key={paquete.id} value={paquete.id}>{paquete.nombre_paquete}</option>
                 ))}
               </select>
+            </label>
+            <label className="grid gap-1 text-sm md:col-span-2">
+              <span className="font-medium text-slate-700">Ubicación *</span>
+              <input
+                value={form.ubicacion}
+                onChange={e => updateField('ubicacion', e.target.value)}
+                className="border rounded-xl2 px-3 py-2"
+                placeholder="Dirección, zona o referencia"
+              />
             </label>
             <label className="grid gap-1 text-sm">
               <span className="font-medium text-slate-700">Estado</span>
