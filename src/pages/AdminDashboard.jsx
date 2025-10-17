@@ -37,7 +37,12 @@ export default function AdminDashboard(){
 
     const fetchServicios = async () => {
       const response = await supabase.from('servicio').select('id')
-      if (response.error?.code === '42P01') {
+      const notFound =
+        response.error?.code === '42P01' ||
+        response.error?.code === 'PGRST404' ||
+        response.error?.message?.includes('404')
+
+      if (notFound) {
         console.warn(
           '[Dashboard] La tabla "servicio" no está disponible. Se usará "tipo_evento" como respaldo.',
           response.error
@@ -92,7 +97,7 @@ export default function AdminDashboard(){
             `[Dashboard] Acceso restringido al leer "${tableName}". Verifica las políticas de Row Level Security.`,
             error
           )
-        } else if (code === 'PGRST404' || code === '42P01') {
+        } else if (code === 'PGRST404' || code === '42P01' || error.message?.includes('404')) {
           console.warn(`[Dashboard] La tabla "${tableName}" no está disponible en Supabase.`, error)
         } else {
           console.error(`[Dashboard] Error al cargar datos de "${tableName}".`, error)
@@ -177,7 +182,18 @@ export default function AdminDashboard(){
         resenas: resenas.length
       })
 
-      setError(errorEntries.length ? 'Algunas métricas no se pudieron cargar. Revisa la consola para más detalles.' : '')
+      const notFound = errorEntries.some(entry =>
+        entry.error?.message?.includes('404') ||
+        entry.error?.code === 'PGRST404' ||
+        entry.error?.code === '42P01'
+      )
+      if (notFound) {
+        setError('Tabla o endpoint no encontrado en Supabase')
+      } else if (errorEntries.length) {
+        setError('Algunas métricas no se pudieron cargar. Revisa la consola para más detalles.')
+      } else {
+        setError('')
+      }
       setLoading(false)
     }
 
