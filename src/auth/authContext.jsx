@@ -2,6 +2,51 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
+const BCRYPT_BASE64_CHARS = './ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+const encodeBcryptBase64 = (bytes) => {
+  let result = '';
+  let offset = 0;
+  const len = bytes.length;
+  while (offset < len) {
+    let c1 = bytes[offset++];
+    result += BCRYPT_BASE64_CHARS[(c1 >> 2) & 0x3f];
+    c1 = (c1 & 0x03) << 4;
+    if (offset >= len) {
+      result += BCRYPT_BASE64_CHARS[c1 & 0x3f];
+      break;
+    }
+
+    let c2 = bytes[offset++];
+    c1 |= (c2 >> 4) & 0x0f;
+    result += BCRYPT_BASE64_CHARS[c1 & 0x3f];
+    c1 = (c2 & 0x0f) << 2;
+
+    if (offset >= len) {
+      result += BCRYPT_BASE64_CHARS[c1 & 0x3f];
+      break;
+    }
+
+    c2 = bytes[offset++];
+    c1 |= (c2 >> 6) & 0x03;
+    result += BCRYPT_BASE64_CHARS[c1 & 0x3f];
+    result += BCRYPT_BASE64_CHARS[c2 & 0x3f];
+  }
+  return result;
+};
+
+const generateLocalBcryptSalt = (cost = 10) => {
+  const normalizedCost = Math.min(Math.max(cost, 4), 31);
+  const target = new Uint8Array(16);
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    globalThis.crypto.getRandomValues(target);
+  } else {
+    throw new Error('Generador aleatorio no disponible.');
+  }
+  const encoded = encodeBcryptBase64(target).slice(0, 22);
+  return `$2b$${normalizedCost.toString().padStart(2, '0')}$${encoded}`;
+};
+
 const AuthCtx = createContext(null);
 
 const ROLE_KEYS = [
@@ -106,11 +151,38 @@ const AUTH_USER_SELECT = `
 const hashPasswordWithDatabase = async (password) => {
   const plain = password ?? '';
   if (!plain) throw new Error('La contraseña no puede estar vacía.');
-  const { data: salt, error: saltError } = await supabase.rpc('gen_salt', { type: 'bf' });
-  if (saltError || !salt) throw new Error('No se pudo generar la contraseña de manera segura.');
-  const { data: hashed, error: hashError } = await supabase.rpc('crypt', { password: plain, salt });
-  if (hashError || !hashed) throw new Error('No se pudo proteger la contraseña.');
-  return hashed;
+
+  let salt = null;
+  let saltError = null;
+
+  try {
+    const response = await supabase.rpc('gen_salt', { type: 'bf' });
+    salt = response.data ?? null;
+    saltError = response.error ?? null;
+  } catch (err) {
+    saltError = err;
+  }
+
+  if (!salt) {
+    if (saltError) {
+      console.warn('[auth] Supabase no pudo generar un salt bcrypt, se usará uno local:', saltError);
+    }
+    try {
+      salt = generateLocalBcryptSalt();
+    } catch (localError) {
+      console.error('[auth] Error generando salt bcrypt local:', localError);
+      throw new Error('No se pudo generar la contraseña de manera segura.');
+    }
+  }
+
+  try {
+    const { data: hashed, error: hashError } = await supabase.rpc('crypt', { password: plain, salt });
+    if (hashError || !hashed) throw hashError ?? new Error('hash nulo');
+    return hashed;
+  } catch (err) {
+    console.error('[auth] No se pudo proteger la contraseña con Supabase:', err);
+    throw new Error('No se pudo proteger la contraseña.');
+  }
 };
 
 const verifyPasswordWithDatabase = async (password, storedHash, userId) => {
