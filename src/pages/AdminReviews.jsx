@@ -12,7 +12,7 @@ export default function AdminReviews(){
     setLoading(true)
     const { data, error } = await supabase
       .from('resena')
-      .select('id, puntaje, comentario')
+      .select('id, calificacion, comentario, fecha_resena')
       .order('id', { ascending: false })
 
     if (error) {
@@ -91,7 +91,7 @@ export default function AdminReviews(){
             {resenas.map(resena => (
               <article key={resena.id} className="card border border-[var(--border)] p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-lg font-semibold text-umber">{resena.puntaje} ★</span>
+                  <span className="text-lg font-semibold text-umber">{resena.calificacion} ★</span>
                   <div className="flex gap-2">
                     <button type="button" className="btn btn-ghost" onClick={() => onDelete(resena.id)}>Eliminar</button>
                   </div>

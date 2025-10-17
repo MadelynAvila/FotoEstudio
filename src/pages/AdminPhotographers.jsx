@@ -5,40 +5,118 @@ import AdminHelpCard from '../components/AdminHelpCard'
 const ESTADOS = ['activo', 'inactivo']
 const defaultForm = { id: null, nombrecompleto: '', telefono: '', correo: '', especialidad: '', estado: 'activo' }
 
+function parseTelefono(rawValue) {
+  if (!rawValue) return { telefono: '', especialidad: '' }
+  const trimmed = String(rawValue).trim()
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed)
+      return {
+        telefono: parsed.telefono || '',
+        especialidad: parsed.especialidad || ''
+      }
+    } catch (error) {
+      console.error('No se pudo interpretar la información del fotógrafo', error)
+    }
+  }
+  return { telefono: trimmed, especialidad: '' }
+}
+
+function serializeTelefono({ telefono, especialidad }) {
+  return JSON.stringify({ telefono: telefono || '', especialidad: especialidad || '' })
+}
+
 export default function AdminPhotographers(){
   const [fotografos, setFotografos] = useState([])
   const [form, setForm] = useState(defaultForm)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState({ type: '', message: '' })
+  const [rolFotografoId, setRolFotografoId] = useState(null)
+  const [estadosUsuario, setEstadosUsuario] = useState([])
+
+  const fetchConfiguracion = async () => {
+    const [{ data: roles, error: rolesError }, { data: estados, error: estadosError }] = await Promise.all([
+      supabase.from('rol').select('id, nombre'),
+      supabase.from('estado_usuario').select('id, nombre_estado')
+    ])
+
+    if (rolesError) {
+      console.error('No se pudo obtener el rol de fotógrafo', rolesError)
+    }
+    if (estadosError) {
+      console.error('No se pudieron obtener los estados de usuario', estadosError)
+    }
+
+    const rolFotografo = roles?.find(item => item.nombre?.toLowerCase() === 'fotografo' || item.nombre?.toLowerCase() === 'fotógrafo')
+    const rolId = rolFotografo?.id ?? null
+    setRolFotografoId(rolId)
+    if (!rolId) {
+      setFotografos([])
+      setLoading(false)
+    }
+    setEstadosUsuario(estados ?? [])
+  }
 
   const fetchFotografos = async () => {
+    if (!rolFotografoId) {
+      setFotografos([])
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     const { data, error } = await supabase
-      .from('fotografo')
-      .select('id, nombrecompleto, telefono, correo, especialidad, estado')
-      .order('nombrecompleto', { ascending: true })
+      .from('usuario')
+      .select('id, username, correo, telefono, idRol, idestado, estado:estado_usuario!usuario_idestado_fkey ( id, nombre_estado )')
+      .eq('idRol', rolFotografoId)
+      .order('username', { ascending: true })
 
     if (error) {
       console.error('No se pudieron cargar los fotógrafos', error)
       setFotografos([])
       setFeedback({ type: 'error', message: 'No pudimos cargar los fotógrafos.' })
-    } else {
-      setFotografos(data ?? [])
-      setFeedback({ type: '', message: '' })
+      setLoading(false)
+      return
     }
+
+    const formatted = (data ?? []).map(item => {
+      const info = parseTelefono(item.telefono)
+      return {
+        id: item.id,
+        nombrecompleto: item.username || 'Fotógrafo sin nombre',
+        telefono: info.telefono,
+        correo: item.correo || '',
+        especialidad: info.especialidad,
+        estado: item.estado?.nombre_estado?.toLowerCase() || 'activo'
+      }
+    })
+
+    setFotografos(formatted)
+    setFeedback({ type: '', message: '' })
     setLoading(false)
   }
 
   useEffect(() => {
-    fetchFotografos()
+    fetchConfiguracion()
   }, [])
+
+  useEffect(() => {
+    if (rolFotografoId) {
+      fetchFotografos()
+    }
+  }, [rolFotografoId])
 
   const updateField = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
   const resetForm = () => setForm(defaultForm)
+
+  const estadoIdFromNombre = (nombre) => {
+    const match = estadosUsuario.find(estado => estado.nombre_estado?.toLowerCase() === nombre)
+    return match?.id ?? null
+  }
 
   const onSubmit = async (event) => {
     event.preventDefault()
@@ -48,18 +126,26 @@ export default function AdminPhotographers(){
       setFeedback({ type: 'error', message: 'El nombre completo es obligatorio.' })
       return
     }
+    if (!rolFotografoId) {
+      setFeedback({ type: 'error', message: 'Configura el rol de fotógrafo antes de registrar integrantes del equipo.' })
+      return
+    }
+
+    const telefonoSerializado = serializeTelefono({ telefono: form.telefono, especialidad: form.especialidad })
+    const estadoId = estadoIdFromNombre(form.estado)
 
     setSaving(true)
+
     const payload = {
-      nombrecompleto: form.nombrecompleto,
-      telefono: form.telefono || null,
+      username: form.nombrecompleto,
+      telefono: telefonoSerializado,
       correo: form.correo || null,
-      especialidad: form.especialidad || null,
-      estado: form.estado || 'activo'
+      idRol: rolFotografoId,
+      idestado: estadoId
     }
 
     if (form.id) {
-      const { error } = await supabase.from('fotografo').update(payload).eq('id', form.id)
+      const { error } = await supabase.from('usuario').update(payload).eq('id', form.id)
       if (error) {
         console.error('No se pudo actualizar el fotógrafo', error)
         setFeedback({ type: 'error', message: 'No se pudo actualizar al fotógrafo.' })
@@ -69,7 +155,7 @@ export default function AdminPhotographers(){
         fetchFotografos()
       }
     } else {
-      const { error } = await supabase.from('fotografo').insert([payload])
+      const { error } = await supabase.from('usuario').insert([payload])
       if (error) {
         console.error('No se pudo crear el fotógrafo', error)
         setFeedback({ type: 'error', message: 'No se pudo crear al fotógrafo.' })
@@ -96,7 +182,7 @@ export default function AdminPhotographers(){
 
   const onDelete = async (id) => {
     if (!window.confirm('¿Eliminar este fotógrafo?')) return
-    const { error } = await supabase.from('fotografo').delete().eq('id', id)
+    const { error } = await supabase.from('usuario').delete().eq('id', id)
     if (error) {
       console.error('No se pudo eliminar al fotógrafo', error)
       setFeedback({ type: 'error', message: 'No se pudo eliminar al fotógrafo seleccionado.' })
@@ -199,9 +285,9 @@ export default function AdminPhotographers(){
               <thead className="bg-sand text-left uppercase text-xs tracking-wide text-slate-600">
                 <tr>
                   <th className="p-2">Nombre</th>
-                  <th className="p-2">Especialidad</th>
                   <th className="p-2">Teléfono</th>
                   <th className="p-2">Correo</th>
+                  <th className="p-2">Especialidad</th>
                   <th className="p-2">Estado</th>
                   <th className="p-2 text-right">Acciones</th>
                 </tr>
@@ -210,14 +296,10 @@ export default function AdminPhotographers(){
                 {fotografos.map(fotografo => (
                   <tr key={fotografo.id} className="border-b last:border-0">
                     <td className="p-2 font-medium text-slate-700">{fotografo.nombrecompleto}</td>
-                    <td className="p-2">{fotografo.especialidad || '—'}</td>
                     <td className="p-2">{fotografo.telefono || '—'}</td>
                     <td className="p-2">{fotografo.correo || '—'}</td>
-                    <td className="p-2">
-                      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase ${fotografo.estado === 'activo' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {fotografo.estado === 'activo' ? 'Activo' : 'Inactivo'}
-                      </span>
-                    </td>
+                    <td className="p-2">{fotografo.especialidad || '—'}</td>
+                    <td className="p-2">{fotografo.estado === 'activo' ? 'Activo' : 'Inactivo'}</td>
                     <td className="p-2">
                       <div className="flex justify-end gap-2">
                         <button type="button" className="btn btn-ghost" onClick={() => onEdit(fotografo)}>Editar</button>
@@ -230,7 +312,7 @@ export default function AdminPhotographers(){
             </table>
           </div>
         ) : (
-          <p className="muted text-sm">No tienes fotógrafos registrados todavía.</p>
+          <p className="muted text-sm">Todavía no hay fotógrafos registrados.</p>
         )}
       </div>
     </div>

@@ -4,6 +4,37 @@ import AdminHelpCard from '../components/AdminHelpCard'
 
 const defaultForm = { id: null, nombre: '', descripcion: '', precio: '' }
 
+function parseDescripcion(rawDescripcion) {
+  if (!rawDescripcion) {
+    return { descripcion: '', precio: '' }
+  }
+
+  const trimmed = rawDescripcion.trim()
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed)
+      return {
+        descripcion: parsed.descripcion ?? '',
+        precio: parsed.precio !== undefined && parsed.precio !== null
+          ? String(parsed.precio)
+          : ''
+      }
+    } catch (error) {
+      console.error('No se pudo interpretar la descripción del evento', error)
+    }
+  }
+
+  return { descripcion: rawDescripcion, precio: '' }
+}
+
+function serializeDescripcion({ descripcion, precio }) {
+  const payload = { descripcion: descripcion || '' }
+  if (precio !== undefined && precio !== null && precio !== '') {
+    payload.precio = Number(precio)
+  }
+  return JSON.stringify(payload)
+}
+
 export default function AdminServices(){
   const [servicios, setServicios] = useState([])
   const [form, setForm] = useState(defaultForm)
@@ -14,16 +45,25 @@ export default function AdminServices(){
   const fetchServicios = async () => {
     setLoading(true)
     const { data, error } = await supabase
-      .from('servicio')
-      .select('id, nombre, descripcion, precio')
-      .order('nombre', { ascending: true })
+      .from('tipo_evento')
+      .select('id, nombre_evento, descripcion')
+      .order('nombre_evento', { ascending: true })
 
     if (error) {
       console.error('No se pudieron cargar los servicios', error)
       setServicios([])
       setFeedback({ type: 'error', message: 'No pudimos cargar los servicios.' })
     } else {
-      setServicios(data ?? [])
+      const formatted = (data ?? []).map(item => {
+        const parsed = parseDescripcion(item.descripcion)
+        return {
+          id: item.id,
+          nombre: item.nombre_evento,
+          descripcion: parsed.descripcion,
+          precio: parsed.precio
+        }
+      })
+      setServicios(formatted)
       setFeedback({ type: '', message: '' })
     }
     setLoading(false)
@@ -55,14 +95,15 @@ export default function AdminServices(){
     }
 
     setSaving(true)
-    const payload = {
-      nombre: form.nombre,
-      descripcion: form.descripcion || null,
-      precio: precio
+    const descripcionSerializada = serializeDescripcion({ descripcion: form.descripcion, precio: form.precio })
+
+    const payloadEvento = {
+      nombre_evento: form.nombre,
+      descripcion: descripcionSerializada
     }
 
     if (form.id) {
-      const { error } = await supabase.from('servicio').update(payload).eq('id', form.id)
+      const { error } = await supabase.from('tipo_evento').update(payloadEvento).eq('id', form.id)
       if (error) {
         console.error('No se pudo actualizar el servicio', error)
         setFeedback({ type: 'error', message: 'No se pudo actualizar el servicio.' })
@@ -72,7 +113,7 @@ export default function AdminServices(){
         fetchServicios()
       }
     } else {
-      const { error } = await supabase.from('servicio').insert([payload])
+      const { error } = await supabase.from('tipo_evento').insert([payloadEvento])
       if (error) {
         console.error('No se pudo crear el servicio', error)
         setFeedback({ type: 'error', message: 'No se pudo crear el servicio.' })
@@ -91,13 +132,13 @@ export default function AdminServices(){
       id: servicio.id,
       nombre: servicio.nombre || '',
       descripcion: servicio.descripcion || '',
-      precio: servicio.precio ? String(servicio.precio) : ''
+      precio: servicio.precio || ''
     })
   }
 
   const onDelete = async (id) => {
     if (!window.confirm('¿Eliminar este servicio? Ten en cuenta que podría estar asociado a paquetes.')) return
-    const { error } = await supabase.from('servicio').delete().eq('id', id)
+    const { error } = await supabase.from('tipo_evento').delete().eq('id', id)
     if (error) {
       console.error('No se pudo eliminar el servicio', error)
       setFeedback({ type: 'error', message: 'No se pudo eliminar el servicio seleccionado.' })

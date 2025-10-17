@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
-const defaultForm = { puntaje: 5, comentario: '' }
+const defaultForm = { calificacion: 5, comentario: '' }
 
 export default function Reviews(){
   const [resenas, setResenas] = useState([])
@@ -14,7 +14,7 @@ export default function Reviews(){
     setLoading(true)
     const { data, error } = await supabase
       .from('resena')
-      .select('id, puntaje, comentario')
+      .select('id, calificacion, comentario, fecha_resena')
       .order('id', { ascending: false })
 
     if (error) {
@@ -32,7 +32,7 @@ export default function Reviews(){
 
   const promedio = useMemo(() => {
     if (!resenas.length) return null
-    const total = resenas.reduce((sum, resena) => sum + Number(resena?.puntaje ?? 0), 0)
+    const total = resenas.reduce((sum, resena) => sum + Number(resena?.calificacion ?? 0), 0)
     return Math.round((total / resenas.length) * 10) / 10
   }, [resenas])
 
@@ -46,8 +46,8 @@ export default function Reviews(){
     event.preventDefault()
     setFeedback({ type: '', message: '' })
 
-    const puntaje = Number(form.puntaje)
-    if (!Number.isFinite(puntaje) || puntaje < 1 || puntaje > 5) {
+    const calificacion = Number(form.calificacion)
+    if (!Number.isFinite(calificacion) || calificacion < 1 || calificacion > 5) {
       setFeedback({ type: 'error', message: 'El puntaje debe ser un valor entre 1 y 5.' })
       return
     }
@@ -59,7 +59,7 @@ export default function Reviews(){
     }
 
     setSubmitting(true)
-    const { error } = await supabase.from('resena').insert([{ puntaje, comentario }])
+    const { error } = await supabase.from('resena').insert([{ calificacion, comentario }])
 
     if (error) {
       console.error('No se pudo registrar la reseña pública', error)
@@ -103,8 +103,8 @@ export default function Reviews(){
                 type="number"
                 min="1"
                 max="5"
-                value={form.puntaje}
-                onChange={event => updateField('puntaje', event.target.value)}
+                value={form.calificacion}
+                onChange={event => updateField('calificacion', event.target.value)}
                 className="border rounded-xl2 px-3 py-2"
               />
             </label>
@@ -164,7 +164,7 @@ export default function Reviews(){
         ) : resenas.length ? (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {resenas.map(resena => {
-              const rating = Number(resena?.puntaje ?? 0)
+              const rating = Number(resena?.calificacion ?? 0)
               return (
                 <article key={resena.id} className="card border border-[var(--border)] p-5 space-y-3 bg-white shadow-soft/40">
                   <div className="flex items-center justify-between">

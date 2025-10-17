@@ -13,7 +13,7 @@ export default function Packages(){
       setError('')
       const { data, error: fetchError } = await supabase
         .from('paquete')
-        .select('id, nombre, paqueteservicio:paqueteservicio ( servicio:servicio ( id, nombre, descripcion, precio ) )')
+        .select('id, nombre_paquete, descripcion, precio, incluye, tipo_evento:tipo_evento ( nombre_evento )')
       if (!active) return
       if (fetchError) {
         console.error('No se pudieron cargar los paquetes', fetchError)
@@ -35,36 +35,32 @@ export default function Packages(){
       {error && <p className="text-red-600 text-sm">{error}</p>}
       {!loading && !error && (
         <div className="grid gap-4 md:grid-cols-3">
-          {paquetes.map(p => {
-            const servicios = (p.paqueteservicio ?? [])
-              .map(rel => rel.servicio)
+          {paquetes.map(paquete => {
+            const incluyeItems = (paquete.incluye || '')
+              .split('\n')
+              .map(item => item.trim())
               .filter(Boolean)
-            const total = servicios.reduce((sum, servicio) => sum + Number(servicio?.precio ?? 0), 0)
             return (
-              <article key={p.id} className="card p-4 grid gap-2">
-                <h3 className="font-semibold text-lg">{p.nombre}</h3>
-                {servicios.length ? (
+              <article key={paquete.id} className="card p-4 grid gap-2">
+                <header className="space-y-1">
+                  <h3 className="font-semibold text-lg">{paquete.nombre_paquete}</h3>
+                  <p className="muted text-xs">{paquete.tipo_evento?.nombre_evento || 'Evento general'}</p>
+                </header>
+                {paquete.descripcion && (
+                  <p className="muted text-sm whitespace-pre-line">{paquete.descripcion}</p>
+                )}
+                {incluyeItems.length ? (
                   <ul className="list-disc pl-4 text-sm text-slate-600">
-                    {servicios.map(servicio => (
-                      <li key={servicio.id}>
-                        <strong>{servicio.nombre}</strong>
-                        {servicio.descripcion && <span className="block muted text-xs">{servicio.descripcion}</span>}
-                        {servicio.precio !== undefined && servicio.precio !== null && (
-                          <span className="block text-xs text-umber font-semibold">
-                            Q{Number(servicio.precio).toLocaleString('es-GT')}
-                          </span>
-                        )}
-                      </li>
+                    {incluyeItems.map((item, index) => (
+                      <li key={index}>{item}</li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="muted text-sm">Este paquete aún no tiene servicios asociados.</p>
+                  <p className="muted text-sm">Este paquete aún no tiene detalles de lo que incluye.</p>
                 )}
-                {total > 0 && (
-                  <div className="text-umber font-extrabold">
-                    Total estimado: Q{total.toLocaleString('es-GT')}
-                  </div>
-                )}
+                <div className="text-umber font-extrabold">
+                  Precio: Q{Number(paquete.precio ?? 0).toLocaleString('es-GT')}
+                </div>
                 <a className="btn btn-primary mt-2" href="/reservar">Reservar</a>
               </article>
             )

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import AdminHelpCard from '../components/AdminHelpCard'
 
-const defaultForm = { idactividad: '', total: '' }
+const defaultForm = { idactividad: '', monto: '', metodo: 'Transferencia' }
 
 function formatDate(value) {
   if (!value) return '—'
@@ -23,8 +23,16 @@ export default function AdminPayments(){
     setLoading(true)
     const { data, error } = await supabase
       .from('actividad')
-      .select('id, fechareserva, estado, cliente:cliente ( id, nombrecompleto, telefono, correo ), pago:pagoactividad ( id, total, fecharegistro )')
-      .order('fechareserva', { ascending: false })
+      .select(`
+        id,
+        estado_pago,
+        nombre_actividad,
+        agenda:agenda ( fecha, horainicio ),
+        cliente:usuario!actividad_idcliente_fkey ( id, username, telefono ),
+        paquete:paquete ( id, nombre_paquete, precio ),
+        pago:pago ( id, monto, metodo_pago, fecha_pago )
+      `)
+      .order('id', { ascending: false })
 
     if (error) {
       console.error('No se pudieron cargar los pagos', error)
@@ -56,13 +64,13 @@ export default function AdminPayments(){
     event.preventDefault()
     setFeedback({ type: '', message: '' })
 
-    if (!form.idactividad || !form.total) {
+    if (!form.idactividad || !form.monto) {
       setFeedback({ type: 'error', message: 'Selecciona una reserva y especifica el monto cobrado.' })
       return
     }
 
-    const total = Number(form.total)
-    if (Number.isNaN(total)) {
+    const monto = Number(form.monto)
+    if (Number.isNaN(monto)) {
       setFeedback({ type: 'error', message: 'El monto debe ser un número válido.' })
       return
     }
@@ -70,12 +78,14 @@ export default function AdminPayments(){
     setSaving(true)
     const payload = {
       idactividad: Number(form.idactividad),
-      total
+      metodo_pago: form.metodo || 'Transferencia',
+      monto,
+      detalle_pago: null
     }
     const { data, error } = await supabase
-      .from('pagoactividad')
+      .from('pago')
       .insert([payload])
-      .select('id, idactividad, total, fecharegistro')
+      .select('id, idactividad, monto, metodo_pago, fecha_pago')
       .single()
 
     if (error || !data) {
@@ -85,19 +95,14 @@ export default function AdminPayments(){
       return
     }
 
-    await supabase.from('actividad').update({ estado: 'pagado' }).eq('id', payload.idactividad)
+    await supabase.from('actividad').update({ estado_pago: 'Pagado' }).eq('id', payload.idactividad)
 
     const actividadAsociada = actividades.find(item => Number(item.id) === Number(payload.idactividad))
-    const cliente = actividadAsociada?.cliente
+    const pago = data
 
     setSelectedInvoice({
-      actividad: {
-        id: payload.idactividad,
-        fechareserva: actividadAsociada?.fechareserva,
-        estado: 'pagado',
-        cliente
-      },
-      pago: data
+      actividad: actividadAsociada,
+      pago
     })
 
     setFeedback({ type: 'success', message: 'Pago registrado correctamente. Se actualizó el estado a pagado.' })
@@ -135,21 +140,34 @@ export default function AdminPayments(){
               >
                 <option value="">Reservas sin pago registrado</option>
                 {actividadesSinPago.map(actividad => {
-                  const cliente = actividad.cliente?.nombrecompleto || 'Cliente sin nombre'
-                  const fecha = actividad.fechareserva ? new Date(actividad.fechareserva).toLocaleDateString('es-GT') : 'Sin fecha'
+                  const cliente = actividad.cliente?.username || 'Cliente sin nombre'
+                  const fecha = actividad.agenda?.fecha ? new Date(actividad.agenda.fecha).toLocaleDateString('es-GT') : 'Sin fecha'
+                  const paquete = actividad.paquete?.nombre_paquete || 'Paquete'
                   return (
                     <option key={actividad.id} value={actividad.id}>
-                      #{actividad.id} — {cliente} ({fecha})
+                      #{actividad.id} — {cliente} ({paquete}, {fecha})
                     </option>
                   )
                 })}
               </select>
             </label>
             <label className="grid gap-1 text-sm">
+              <span className="font-medium text-slate-700">Método de pago</span>
+              <select
+                value={form.metodo}
+                onChange={event => updateField('metodo', event.target.value)}
+                className="border rounded-xl2 px-3 py-2"
+              >
+                <option value="Transferencia">Transferencia</option>
+                <option value="Efectivo">Efectivo</option>
+                <option value="Tarjeta">Tarjeta</option>
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm">
               <span className="font-medium text-slate-700">Monto cobrado (Q)</span>
               <input
-                value={form.total}
-                onChange={event => updateField('total', event.target.value)}
+                value={form.monto}
+                onChange={event => updateField('monto', event.target.value)}
                 className="border rounded-xl2 px-3 py-2"
                 placeholder="Ej. 1800"
               />
@@ -196,25 +214,25 @@ export default function AdminPayments(){
                     <tr key={actividad.id} className="border-b last:border-0">
                       <td className="p-2">
                         <div className="font-medium text-slate-700">Reserva #{actividad.id}</div>
-                        <div className="text-xs text-slate-500">{actividad.fechareserva ? new Date(actividad.fechareserva).toLocaleDateString('es-GT') : 'Sin fecha'}</div>
-                      </td>
-                      <td className="p-2 text-sm text-slate-600">
-                        <div>{actividad.cliente?.nombrecompleto || 'Cliente sin nombre'}</div>
-                        <div className="text-xs text-slate-500">{actividad.cliente?.correo || '—'} · {actividad.cliente?.telefono || '—'}</div>
+                        <div className="text-xs text-slate-500">{actividad.agenda?.fecha ? new Date(actividad.agenda.fecha).toLocaleDateString('es-GT') : 'Sin fecha'}</div>
                       </td>
                       <td className="p-2">
-                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase ${actividad.estado === 'pagado' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                          {actividad.estado || 'pendiente'}
+                        <div className="font-medium text-slate-700">{actividad.cliente?.username || 'Cliente sin nombre'}</div>
+                        <div className="text-xs text-slate-500">{actividad.paquete?.nombre_paquete || 'Paquete sin definir'}</div>
+                      </td>
+                      <td className="p-2">
+                        <span className="inline-flex items-center rounded-full bg-sand px-2 py-1 text-xs font-semibold uppercase tracking-wide">
+                          {(actividad.estado_pago || 'Pendiente')}
                         </span>
                       </td>
-                      <td className="p-2 text-sm text-slate-600">
+                      <td className="p-2">
                         {pago ? (
                           <div>
-                            <div className="font-semibold text-umber">Q{Number(pago.total ?? 0).toLocaleString('es-GT')}</div>
-                            <div className="text-xs text-slate-500">{formatDate(pago.fecharegistro)}</div>
+                            <div className="font-medium text-slate-700">Q{Number(pago.monto ?? 0).toLocaleString('es-GT')}</div>
+                            <div className="text-xs text-slate-500">{pago.metodo_pago || 'Método no especificado'}</div>
                           </div>
                         ) : (
-                          <span className="muted">Pendiente</span>
+                          <span className="muted text-xs">Sin pago registrado</span>
                         )}
                       </td>
                       <td className="p-2 text-right">
@@ -223,7 +241,7 @@ export default function AdminPayments(){
                             Ver factura
                           </button>
                         ) : (
-                          <span className="text-xs text-slate-400">Registra un pago para habilitar la factura</span>
+                          <span className="muted text-xs">—</span>
                         )}
                       </td>
                     </tr>
@@ -233,41 +251,26 @@ export default function AdminPayments(){
             </table>
           </div>
         ) : (
-          <p className="muted text-sm">No hay reservas registradas todavía.</p>
+          <p className="muted text-sm">Todavía no hay pagos registrados.</p>
         )}
       </div>
 
       {selectedInvoice && (
-        <div className="card p-5 print:border print:shadow-none">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-umber">Factura de actividad #{selectedInvoice.actividad.id}</h2>
-              <p className="text-sm text-slate-600">Emitida {formatDate(selectedInvoice.pago.fecharegistro)}</p>
+        <div className="card p-5 print:p-0">
+          <header className="flex flex-wrap justify-between gap-3 mb-4 print:hidden">
+            <h2 className="text-lg font-semibold text-umber">Factura del pago</h2>
+            <div className="flex gap-2">
+              <button className="btn btn-ghost" onClick={() => setSelectedInvoice(null)}>Cerrar</button>
+              <button className="btn btn-primary" onClick={onImprimir}>Imprimir</button>
             </div>
-            <button type="button" className="btn btn-primary" onClick={onImprimir}>
-              Imprimir factura
-            </button>
-          </div>
-          <div className="mt-4 grid gap-4 md:grid-cols-2 text-sm">
-            <div className="space-y-1">
-              <h3 className="font-semibold text-slate-700">Datos del cliente</h3>
-              <p>{selectedInvoice.actividad.cliente?.nombrecompleto || 'Cliente sin nombre'}</p>
-              <p>{selectedInvoice.actividad.cliente?.correo || '—'}</p>
-              <p>{selectedInvoice.actividad.cliente?.telefono || '—'}</p>
-            </div>
-            <div className="space-y-1">
-              <h3 className="font-semibold text-slate-700">Detalle de la sesión</h3>
-              <p>Reserva #{selectedInvoice.actividad.id}</p>
-              <p>Fecha solicitada: {selectedInvoice.actividad.fechareserva ? new Date(selectedInvoice.actividad.fechareserva).toLocaleDateString('es-GT') : 'Sin fecha'}</p>
-              <p>Estado actual: {selectedInvoice.actividad.estado}</p>
-            </div>
-          </div>
-          <div className="mt-6 rounded-xl2 border border-[var(--border)] bg-sand/60 p-4">
-            <div className="flex items-center justify-between text-lg font-semibold text-umber">
-              <span>Total pagado</span>
-              <span>Q{Number(selectedInvoice.pago.total ?? 0).toLocaleString('es-GT')}</span>
-            </div>
-            <p className="mt-2 text-xs text-slate-500">Conserva esta factura como comprobante. Usa el botón de imprimir para generar una copia física o PDF desde tu navegador.</p>
+          </header>
+          <div className="grid gap-2 text-sm">
+            <div><strong>Reserva:</strong> #{selectedInvoice.actividad?.id}</div>
+            <div><strong>Cliente:</strong> {selectedInvoice.actividad?.cliente?.username || 'Cliente sin nombre'}</div>
+            <div><strong>Paquete:</strong> {selectedInvoice.actividad?.paquete?.nombre_paquete || 'Paquete sin definir'}</div>
+            <div><strong>Monto:</strong> Q{Number(selectedInvoice.pago?.monto ?? 0).toLocaleString('es-GT')}</div>
+            <div><strong>Método:</strong> {selectedInvoice.pago?.metodo_pago}</div>
+            <div><strong>Fecha de pago:</strong> {formatDate(selectedInvoice.pago?.fecha_pago)}</div>
           </div>
         </div>
       )}
