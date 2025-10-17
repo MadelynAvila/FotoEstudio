@@ -69,9 +69,11 @@ export default function AdminReservations(){
   const [rolClienteId, setRolClienteId] = useState(null)
   const [rolFotografoId, setRolFotografoId] = useState(null)
 
-  const fetchData = async () => {
+  const fetchData = async ({ preserveFeedback = false } = {}) => {
     setLoading(true)
-    setFeedback({ type: '', message: '' })
+    if (!preserveFeedback) {
+      setFeedback({ type: '', message: '' })
+    }
 
     const [actividadesRes, paquetesRes, rolesRes] = await Promise.all([
       supabase
@@ -144,6 +146,7 @@ export default function AdminReservations(){
 
   const updateField = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }))
+    setFeedback({ type: '', message: '' })
   }
 
   const resetForm = () => setForm(defaultForm)
@@ -196,7 +199,18 @@ export default function AdminReservations(){
       return
     }
 
-    await supabase.from('cliente').insert([{ idusuario: usuarioData.id, Descuento: 0 }])
+    const { data: clienteData, error: clienteError } = await supabase
+      .from('cliente')
+      .insert([{ idusuario: usuarioData.id, Descuento: 0 }])
+      .select('idcliente, idusuario')
+      .single()
+
+    if (clienteError) {
+      console.error('No se pudo registrar el detalle del cliente', clienteError)
+      setFeedback({ type: 'error', message: 'No se pudo asociar la reserva al cliente registrado.' })
+      setSaving(false)
+      return
+    }
 
     if (!rolFotografoId) {
       setFeedback({ type: 'error', message: 'No hay fotógrafos disponibles para asignar a la reserva.' })
@@ -271,10 +285,11 @@ export default function AdminReservations(){
       .from('actividad')
       .insert([
         {
-          idcliente: usuarioData.id,
+          idcliente: clienteData?.idusuario ?? usuarioData.id,
           idagenda: agendaData.id,
           idpaquete: Number(form.paqueteId),
-          estado_pago: form.estado,
+          estado_pago: formatEstado(form.estado),
+
           nombre_actividad: nombreActividad,
           ubicacion: form.ubicacion
         }
@@ -286,7 +301,7 @@ export default function AdminReservations(){
     } else {
       setFeedback({ type: 'success', message: 'Reserva creada correctamente.' })
       resetForm()
-      fetchData()
+      fetchData({ preserveFeedback: true })
     }
 
     setSaving(false)
