@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../auth/authContext'
 import { supabase } from '../lib/supabaseClient'
 
@@ -34,6 +34,11 @@ export default function Booking() {
   const [fotografos, setFotografos] = useState([])
   const [disponibilidadFotografos, setDisponibilidadFotografos] = useState({})
   const { user } = useAuth()
+
+  const fotografosList = useMemo(
+    () => (Array.isArray(fotografos) ? fotografos : []),
+    [fotografos]
+  )
 
   // Cargar paquetes
   useEffect(() => {
@@ -76,7 +81,7 @@ export default function Booking() {
         return
       }
 
-      setFotografos(fotografoData ?? [])
+      setFotografos(Array.isArray(fotografoData) ? fotografoData : [])
     }
 
     loadFotografos()
@@ -111,7 +116,7 @@ export default function Booking() {
   // Evaluar disponibilidad de fotógrafos
   useEffect(() => {
     const evaluarDisponibilidad = async () => {
-      if (!form.fecha || !form.horaInicio || !form.horaFin || fotografos.length === 0) {
+      if (!form.fecha || !form.horaInicio || !form.horaFin || fotografosList.length === 0) {
         setDisponibilidadFotografos({})
         return
       }
@@ -146,7 +151,7 @@ export default function Booking() {
       })
 
       const mapaDisponibilidad = {}
-      fotografos.forEach(f => {
+      fotografosList.forEach(f => {
         mapaDisponibilidad[f.id] = !ocupado.has(f.id)
       })
 
@@ -154,7 +159,28 @@ export default function Booking() {
     }
 
     evaluarDisponibilidad()
-  }, [form.fecha, form.horaInicio, form.horaFin, fotografos])
+  }, [form.fecha, form.horaInicio, form.horaFin, fotografosList])
+
+  useEffect(() => {
+    setForm(prev => {
+      if (fotografosList.length === 0) {
+        return prev.fotografoId ? { ...prev, fotografoId: '' } : prev
+      }
+
+      const claves = Object.keys(disponibilidadFotografos)
+      if (claves.length === 0) {
+        return prev.fotografoId ? { ...prev, fotografoId: '' } : prev
+      }
+
+      const disponible = Object.entries(disponibilidadFotografos).find(([, value]) => value)
+      const nuevoId = disponible ? String(disponible[0]) : ''
+      if (prev.fotografoId === nuevoId) {
+        return prev
+      }
+
+      return { ...prev, fotografoId: nuevoId }
+    })
+  }, [disponibilidadFotografos, fotografosList])
 
   // Envío del formulario
   const handleSubmit = async (e) => {
@@ -169,8 +195,13 @@ export default function Booking() {
 
     const { nombre, telefono, correo, paqueteId, fecha, horaInicio, horaFin, ubicacion, formaPago, fotografoId } = form
 
-    if (!nombre || !telefono || !correo || !paqueteId || !fecha || !horaInicio || !horaFin || !ubicacion || !formaPago || !fotografoId) {
+    if (!nombre || !telefono || !correo || !paqueteId || !fecha || !horaInicio || !horaFin || !ubicacion || !formaPago) {
       setError('Por favor completa todos los campos antes de enviar la reserva.')
+      return
+    }
+
+    if (!fotografoId) {
+      setError('No hay fotógrafos disponibles para el horario seleccionado.')
       return
     }
 
@@ -203,16 +234,22 @@ export default function Booking() {
         return
       }
 
-      if (!clienteExistente) {
-        const { error: crearClienteError } = await supabase
+      let clienteId = clienteExistente?.idcliente ?? null
+
+      if (!clienteId) {
+        const { data: nuevoCliente, error: crearClienteError } = await supabase
           .from('cliente')
           .insert([{ idusuario: user.id, Descuento: 0 }])
+          .select('idcliente')
+          .single()
 
-        if (crearClienteError) {
+        if (crearClienteError || !nuevoCliente) {
           console.error('Error al registrar cliente', crearClienteError)
           setError('No pudimos registrar tus datos. Intenta más tarde.')
           return
         }
+
+        clienteId = nuevoCliente.idcliente
       }
 
       // Validar conflicto en agenda
@@ -273,7 +310,7 @@ export default function Booking() {
         .from('actividad')
         .insert([
           {
-            idcliente: user.id,
+            idcliente: clienteId,
             idagenda: agendaData.id,
             idpaquete: Number(paqueteId),
             estado_pago: 'Pendiente',
@@ -321,6 +358,48 @@ export default function Booking() {
     }
   }
 
+  const hayFotografosRegistrados = fotografosList.length > 0
+  const horarioCompleto = Boolean(form.fecha && form.horaInicio && form.horaFin)
+  const hayDisponibilidadCalculada = Object.keys(disponibilidadFotografos).length > 0
+  const fotografoAsignado = form.fotografoId
+    ? fotografosList.find(f => String(f.id) === String(form.fotografoId))
+    : null
+
+  const totalDisponibles = Object.values(disponibilidadFotografos).filter(Boolean).length
+
+  let mensajeFotografo = ''
+  let estadoFotografo = 'neutral'
+
+  if (!hayFotografosRegistrados) {
+    mensajeFotografo = 'No hay fotógrafos registrados actualmente. Comunícate con el estudio para más información.'
+    estadoFotografo = 'alert'
+  } else if (!horarioCompleto) {
+    mensajeFotografo = 'Selecciona una fecha y un horario para revisar la disponibilidad.'
+  } else if (!hayDisponibilidadCalculada) {
+    mensajeFotografo = 'Consultando disponibilidad…'
+  } else if (fotografoAsignado) {
+    mensajeFotografo = `Fotógrafo disponible: ${fotografoAsignado.username}. Se asignará automáticamente a tu reserva.`
+    estadoFotografo = 'success'
+  } else if (hayDisponibilidadCalculada && totalDisponibles > 0) {
+    mensajeFotografo = 'Hay fotógrafos disponibles para el horario seleccionado. Completa el formulario para continuar con la reserva.'
+    estadoFotografo = 'success'
+  } else {
+    mensajeFotografo = 'No hay fotógrafos disponibles para el horario seleccionado. Elige otro horario o contacta al estudio.'
+    estadoFotografo = 'alert'
+  }
+
+  const fotografoMessageClass = estadoFotografo === 'success'
+    ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+    : estadoFotografo === 'alert'
+      ? 'border-red-300 bg-red-50 text-red-700'
+      : 'border-[var(--border)] bg-sand/40 text-slate-600'
+
+  const fotografoLabelClass = estadoFotografo === 'success'
+    ? 'block text-xs font-semibold uppercase tracking-wide mb-1 text-emerald-700'
+    : estadoFotografo === 'alert'
+      ? 'block text-xs font-semibold uppercase tracking-wide mb-1 text-red-700'
+      : 'block text-xs font-semibold uppercase tracking-wide mb-1 text-slate-500'
+
   return (
     <div className="container-1120 py-6">
       <h2 className="text-2xl font-display mb-4">Reservar sesión</h2>
@@ -358,27 +437,10 @@ export default function Booking() {
           <option value="Efectivo">Efectivo</option>
         </select>
 
-        <select value={form.fotografoId} onChange={e => updateField('fotografoId', e.target.value)} className="border rounded-xl2 px-3 py-2" disabled={!user || enviando || fotografos.length === 0}>
-          <option value="">Selecciona un fotógrafo disponible</option>
-          {fotografos.map(fotografo => {
-            const disponible = disponibilidadFotografos[fotografo.id]
-            const etiqueta = disponible === undefined
-              ? 'Selecciona fecha y horario'
-              : disponible
-              ? 'Disponible'
-              : 'No disponible'
-            return (
-              <option key={fotografo.id} value={fotografo.id} disabled={disponible === false}>
-                {fotografo.username} ({etiqueta})
-              </option>
-            )
-          })}
-        </select>
-
-        {form.fecha && form.horaInicio && form.horaFin && fotografos.length > 0 && Object.keys(disponibilidadFotografos).length > 0 &&
-          !Object.values(disponibilidadFotografos).some(valor => valor) && (
-            <p className="text-sm text-red-600">No hay fotógrafos disponibles para el horario seleccionado.</p>
-          )}
+        <div className={`rounded-xl2 border px-3 py-2 text-sm ${fotografoMessageClass}`}>
+          <span className={fotografoLabelClass}>Fotógrafo</span>
+          <span>{mensajeFotografo}</span>
+        </div>
 
         <button className="btn btn-primary" disabled={!user || enviando}>
           {enviando ? 'Enviando…' : 'Enviar'}
