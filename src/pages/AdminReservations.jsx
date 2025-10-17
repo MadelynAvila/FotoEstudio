@@ -9,8 +9,26 @@ const defaultForm = {
   telefono: '',
   comentarios: '',
   fecha: '',
+  horaInicio: '',
+  horaFin: '',
+  ubicacion: '',
   estado: 'pendiente',
   paqueteId: ''
+}
+
+function horaATotalMinutos(value) {
+  if (!value) return null
+  const [horas = '0', minutos = '0'] = String(value).split(':')
+  const h = Number.parseInt(horas, 10)
+  const m = Number.parseInt(minutos, 10)
+  if (Number.isNaN(h) || Number.isNaN(m)) return null
+  return h * 60 + m
+}
+
+function formatearHoraParaDB(value) {
+  if (!value) return null
+  const [horas = '00', minutos = '00'] = String(value).split(':')
+  return `${horas.padStart(2, '0')}:${minutos.padStart(2, '0')}:00`
 }
 
 function formatEstado(value) {
@@ -51,31 +69,16 @@ export default function AdminReservations(){
   const [rolClienteId, setRolClienteId] = useState(null)
   const [rolFotografoId, setRolFotografoId] = useState(null)
 
-  const fetchData = async () => {
+  const fetchData = async ({ preserveFeedback = false } = {}) => {
     setLoading(true)
-    setFeedback({ type: '', message: '' })
+    if (!preserveFeedback) {
+      setFeedback({ type: '', message: '' })
+    }
 
     const [actividadesRes, paquetesRes, rolesRes] = await Promise.all([
       supabase
         .from('actividad')
-        .select(`
-          id,
-          estado_pago,
-          nombre_actividad,
-          ubicacion,
-          agenda:agenda (
-            fecha,
-            horainicio,
-            horafin,
-            fotografo:usuario!agenda_idfotografo_fkey (
-              id,
-              username,
-              telefono
-            )
-          ),
-          cliente:usuario!actividad_idcliente_fkey ( id, username, telefono ),
-          paquete:paquete ( id, nombre_paquete )
-        `)
+        .select('id, idcliente, idagenda, idpaquete, estado_pago, nombre_actividad, ubicacion')
         .order('id', { ascending: false }),
       supabase
         .from('paquete')
@@ -96,20 +99,69 @@ export default function AdminReservations(){
       return
     }
 
-    const formatted = (actividadesRes.data ?? []).map(item => ({
-      id: item.id,
-      nombre: item.cliente?.username || 'Cliente sin nombre',
-      telefono: item.cliente?.telefono || '—',
-      comentarios: item.nombre_actividad || '',
-      fecha: item.agenda?.fecha,
-      horaInicio: item.agenda?.horainicio,
-      horaFin: item.agenda?.horafin,
-      fotografo: item.agenda?.fotografo?.username || 'Sin asignar',
-      fotografoTelefono: item.agenda?.fotografo?.telefono || '—',
-      ubicacion: item.ubicacion || 'No especificada',
-      estado: (item.estado_pago || 'pendiente').toLowerCase(),
-      paquete: item.paquete?.nombre_paquete || 'Paquete sin asignar'
-    }))
+    const actividades = actividadesRes.data ?? []
+    const agendaIds = Array.from(new Set(actividades.map(item => item.idagenda).filter(Boolean)))
+    const clienteIds = Array.from(new Set(actividades.map(item => item.idcliente).filter(Boolean)))
+
+    const { data: agendasData = [], error: agendasError } = agendaIds.length
+      ? await supabase
+        .from('agenda')
+        .select('id, fecha, horainicio, horafin, idfotografo')
+        .in('id', agendaIds)
+      : { data: [], error: null }
+
+    if (agendasError) {
+      console.error('No se pudieron obtener las agendas asociadas', agendasError)
+      setReservas([])
+      setPaquetes(paquetesRes.data ?? [])
+      setFeedback({ type: 'error', message: 'No pudimos obtener las agendas asociadas a las reservas.' })
+      setLoading(false)
+      return
+    }
+
+    const fotografoIds = Array.from(new Set((agendasData ?? []).map(item => item.idfotografo).filter(Boolean)))
+    const usuarioIds = Array.from(new Set([...clienteIds, ...fotografoIds]))
+
+    const { data: usuariosData = [], error: usuariosError } = usuarioIds.length
+      ? await supabase
+        .from('usuario')
+        .select('id, username, telefono')
+        .in('id', usuarioIds)
+      : { data: [], error: null }
+
+    if (usuariosError) {
+      console.error('No se pudieron obtener los usuarios asociados', usuariosError)
+      setReservas([])
+      setPaquetes(paquetesRes.data ?? [])
+      setFeedback({ type: 'error', message: 'No pudimos obtener la información de clientes y fotógrafos.' })
+      setLoading(false)
+      return
+    }
+
+    const agendaMap = new Map((agendasData ?? []).map(item => [item.id, item]))
+    const usuarioMap = new Map((usuariosData ?? []).map(item => [item.id, item]))
+    const paqueteMap = new Map((paquetesRes.data ?? []).map(item => [item.id, item.nombre_paquete]))
+
+    const formatted = actividades.map(item => {
+      const agenda = agendaMap.get(item.idagenda)
+      const cliente = usuarioMap.get(item.idcliente)
+      const fotografo = agenda ? usuarioMap.get(agenda.idfotografo) : null
+
+      return {
+        id: item.id,
+        nombre: cliente?.username || 'Cliente sin nombre',
+        telefono: cliente?.telefono || '—',
+        comentarios: item.nombre_actividad || '',
+        fecha: agenda?.fecha,
+        horaInicio: agenda?.horainicio,
+        horaFin: agenda?.horafin,
+        fotografo: fotografo?.username || 'Sin asignar',
+        fotografoTelefono: fotografo?.telefono || '—',
+        ubicacion: item.ubicacion || 'No especificada',
+        estado: (item.estado_pago || 'pendiente').toLowerCase(),
+        paquete: paqueteMap.get(item.idpaquete) || 'Paquete sin asignar'
+      }
+    })
 
     const rolCliente = rolesRes.data?.find(rol => rol.nombre?.toLowerCase() === 'cliente')
     const rolFotografo = rolesRes.data?.find(rol => rol.nombre?.toLowerCase() === 'fotografo' || rol.nombre?.toLowerCase() === 'fotógrafo')
@@ -126,6 +178,7 @@ export default function AdminReservations(){
 
   const updateField = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }))
+    setFeedback({ type: '', message: '' })
   }
 
   const resetForm = () => setForm(defaultForm)
@@ -139,13 +192,21 @@ export default function AdminReservations(){
     event.preventDefault()
     setFeedback({ type: '', message: '' })
 
-    if (!form.nombre || !form.fecha || !form.paqueteId) {
-      setFeedback({ type: 'error', message: 'El nombre del cliente, la fecha y el paquete son obligatorios.' })
+    if (!form.nombre || !form.fecha || !form.paqueteId || !form.horaInicio || !form.horaFin || !form.ubicacion) {
+      setFeedback({ type: 'error', message: 'Nombre, fecha, horario, paquete y ubicación son obligatorios.' })
       return
     }
 
     if (!rolClienteId) {
       setFeedback({ type: 'error', message: 'No se pudo determinar el rol de cliente. Revisa la configuración de roles.' })
+      return
+    }
+
+    const minutosInicio = horaATotalMinutos(form.horaInicio)
+    const minutosFin = horaATotalMinutos(form.horaFin)
+
+    if (minutosInicio === null || minutosFin === null || minutosInicio >= minutosFin) {
+      setFeedback({ type: 'error', message: 'El horario seleccionado no es válido. Revisa las horas de inicio y fin.' })
       return
     }
 
@@ -170,7 +231,18 @@ export default function AdminReservations(){
       return
     }
 
-    await supabase.from('cliente').insert([{ idusuario: usuarioData.id, Descuento: 0 }])
+    const { data: clienteData, error: clienteError } = await supabase
+      .from('cliente')
+      .insert([{ idusuario: usuarioData.id, Descuento: 0 }])
+      .select('idcliente, idusuario')
+      .single()
+
+    if (clienteError) {
+      console.error('No se pudo registrar el detalle del cliente', clienteError)
+      setFeedback({ type: 'error', message: 'No se pudo asociar la reserva al cliente registrado.' })
+      setSaving(false)
+      return
+    }
 
     if (!rolFotografoId) {
       setFeedback({ type: 'error', message: 'No hay fotógrafos disponibles para asignar a la reserva.' })
@@ -195,9 +267,30 @@ export default function AdminReservations(){
     const agendaPayload = {
       idfotografo: fotografoAsignado,
       fecha: form.fecha,
-      horainicio: '09:00:00',
-      horafin: '10:00:00',
+      horainicio: formatearHoraParaDB(form.horaInicio),
+      horafin: formatearHoraParaDB(form.horaFin),
       disponible: false
+    }
+
+    const { data: agendaExistente } = await supabase
+      .from('agenda')
+      .select('id, horainicio, horafin, disponible')
+      .eq('fecha', form.fecha)
+      .eq('idfotografo', fotografoAsignado)
+
+    const hayConflicto = (agendaExistente ?? []).some(item => {
+      if (item.disponible === false) {
+        const inicioAgenda = horaATotalMinutos(item.horainicio)
+        const finAgenda = horaATotalMinutos(item.horafin)
+        return inicioAgenda < minutosFin && minutosInicio < finAgenda
+      }
+      return false
+    })
+
+    if (hayConflicto) {
+      setFeedback({ type: 'error', message: 'El fotógrafo asignado ya tiene una actividad registrada en ese horario.' })
+      setSaving(false)
+      return
     }
 
     const { data: agendaData, error: agendaError } = await supabase
@@ -213,16 +306,23 @@ export default function AdminReservations(){
       return
     }
 
+    const nombrePaquete = paquetes.find(paquete => String(paquete.id) === String(form.paqueteId))?.nombre_paquete
+    const nombreActividad = form.comentarios
+      ? form.comentarios
+      : nombrePaquete
+        ? `Reserva para ${nombrePaquete}`
+        : 'Reserva creada desde el panel de administración'
+
     const { error: actividadError } = await supabase
       .from('actividad')
       .insert([
         {
-          idcliente: usuarioData.id,
+          idcliente: clienteData?.idusuario ?? usuarioData.id,
           idagenda: agendaData.id,
           idpaquete: Number(form.paqueteId),
-          estado_pago: form.estado,
-          nombre_actividad: form.comentarios || null,
-          ubicacion: null
+          estado_pago: formatEstado(form.estado),
+          nombre_actividad: nombreActividad,
+          ubicacion: form.ubicacion
         }
       ])
 
@@ -232,16 +332,18 @@ export default function AdminReservations(){
     } else {
       setFeedback({ type: 'success', message: 'Reserva creada correctamente.' })
       resetForm()
-      fetchData()
+      fetchData({ preserveFeedback: true })
     }
 
     setSaving(false)
   }
 
   const onEstadoChange = async (id, nuevoEstado) => {
+    const estadoNormalizado = formatEstado(nuevoEstado)
+
     const { error } = await supabase
       .from('actividad')
-      .update({ estado_pago: nuevoEstado })
+      .update({ estado_pago: estadoNormalizado })
       .eq('id', id)
 
     if (error) {
@@ -304,6 +406,24 @@ export default function AdminReservations(){
               />
             </label>
             <label className="grid gap-1 text-sm">
+              <span className="font-medium text-slate-700">Hora de inicio *</span>
+              <input
+                type="time"
+                value={form.horaInicio}
+                onChange={e => updateField('horaInicio', e.target.value)}
+                className="border rounded-xl2 px-3 py-2"
+              />
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span className="font-medium text-slate-700">Hora de fin *</span>
+              <input
+                type="time"
+                value={form.horaFin}
+                onChange={e => updateField('horaFin', e.target.value)}
+                className="border rounded-xl2 px-3 py-2"
+              />
+            </label>
+            <label className="grid gap-1 text-sm">
               <span className="font-medium text-slate-700">Paquete *</span>
               <select
                 value={form.paqueteId}
@@ -315,6 +435,15 @@ export default function AdminReservations(){
                   <option key={paquete.id} value={paquete.id}>{paquete.nombre_paquete}</option>
                 ))}
               </select>
+            </label>
+            <label className="grid gap-1 text-sm md:col-span-2">
+              <span className="font-medium text-slate-700">Ubicación *</span>
+              <input
+                value={form.ubicacion}
+                onChange={e => updateField('ubicacion', e.target.value)}
+                className="border rounded-xl2 px-3 py-2"
+                placeholder="Dirección, zona o referencia"
+              />
             </label>
             <label className="grid gap-1 text-sm">
               <span className="font-medium text-slate-700">Estado</span>
