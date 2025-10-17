@@ -212,36 +212,102 @@ export default function AdminReservations(){
 
     setSaving(true)
 
-    const { data: usuarioData, error: usuarioError } = await supabase
+    const { data: usuarioExistente, error: usuarioExistenteError } = await supabase
       .from('usuario')
-      .insert([
-        {
-          username: form.nombre,
-          telefono: form.telefono || null,
-          idrol: rolClienteId
-        }
-      ])
-      .select('id')
-      .single()
+      .select('id, telefono, idrol')
+      .eq('username', form.nombre)
+      .maybeSingle()
 
-    if (usuarioError || !usuarioData) {
-      console.error('No se pudo registrar el cliente', usuarioError)
-      setFeedback({ type: 'error', message: 'Ocurrió un error al registrar el cliente para la reserva.' })
+    if (usuarioExistenteError) {
+      console.error('No se pudo consultar el cliente existente', usuarioExistenteError)
+      setFeedback({ type: 'error', message: 'Ocurrió un error al validar la información del cliente.' })
       setSaving(false)
       return
     }
 
-    const { data: clienteData, error: clienteError } = await supabase
-      .from('cliente')
-      .insert([{ idusuario: usuarioData.id, Descuento: 0 }])
-      .select('idcliente, idusuario')
-      .single()
+    let usuarioId = usuarioExistente?.id ?? null
 
-    if (clienteError) {
-      console.error('No se pudo registrar el detalle del cliente', clienteError)
-      setFeedback({ type: 'error', message: 'No se pudo asociar la reserva al cliente registrado.' })
+    if (!usuarioId) {
+      const { data: usuarioData, error: usuarioError } = await supabase
+        .from('usuario')
+        .insert([
+          {
+            username: form.nombre,
+            telefono: form.telefono || null,
+            idrol: rolClienteId
+          }
+        ])
+        .select('id')
+        .single()
+
+      if (usuarioError || !usuarioData) {
+        console.error('No se pudo registrar el cliente', usuarioError)
+        setFeedback({ type: 'error', message: 'Ocurrió un error al registrar el cliente para la reserva.' })
+        setSaving(false)
+        return
+      }
+
+      usuarioId = usuarioData.id
+    } else {
+      const updates = {}
+      if (usuarioExistente.idrol !== rolClienteId) {
+        updates.idrol = rolClienteId
+      }
+      if (form.telefono && usuarioExistente.telefono !== form.telefono) {
+        updates.telefono = form.telefono
+      }
+
+      if (Object.keys(updates).length) {
+        const { error: actualizarUsuarioError } = await supabase
+          .from('usuario')
+          .update(updates)
+          .eq('id', usuarioId)
+
+        if (actualizarUsuarioError) {
+          console.error('No se pudo actualizar la información del cliente', actualizarUsuarioError)
+          setFeedback({ type: 'error', message: 'No se pudo actualizar la información del cliente existente.' })
+          setSaving(false)
+          return
+        }
+      }
+    }
+
+    if (!usuarioId) {
+      setFeedback({ type: 'error', message: 'No se pudo determinar el cliente para la reserva.' })
       setSaving(false)
       return
+    }
+
+    const { data: clienteExistente, error: clienteExistenteError } = await supabase
+      .from('cliente')
+      .select('idcliente, idusuario')
+      .eq('idusuario', usuarioId)
+      .maybeSingle()
+
+    if (clienteExistenteError) {
+      console.error('No se pudo validar el detalle del cliente', clienteExistenteError)
+      setFeedback({ type: 'error', message: 'No se pudo validar la información del cliente asociado.' })
+      setSaving(false)
+      return
+    }
+
+    let clienteData = clienteExistente
+
+    if (!clienteData) {
+      const { data: nuevoClienteData, error: clienteError } = await supabase
+        .from('cliente')
+        .insert([{ idusuario: usuarioId, Descuento: 0 }])
+        .select('idcliente, idusuario')
+        .single()
+
+      if (clienteError) {
+        console.error('No se pudo registrar el detalle del cliente', clienteError)
+        setFeedback({ type: 'error', message: 'No se pudo asociar la reserva al cliente registrado.' })
+        setSaving(false)
+        return
+      }
+
+      clienteData = nuevoClienteData
     }
 
     if (!rolFotografoId) {
@@ -317,7 +383,7 @@ export default function AdminReservations(){
       .from('actividad')
       .insert([
         {
-          idcliente: clienteData?.idusuario ?? usuarioData.id,
+          idcliente: clienteData?.idusuario ?? usuarioId,
           idagenda: agendaData.id,
           idpaquete: Number(form.paqueteId),
           estado_pago: formatEstado(form.estado),
@@ -332,7 +398,7 @@ export default function AdminReservations(){
     } else {
       setFeedback({ type: 'success', message: 'Reserva creada correctamente.' })
       resetForm()
-      fetchData({ preserveFeedback: true })
+      await fetchData({ preserveFeedback: true })
     }
 
     setSaving(false)
