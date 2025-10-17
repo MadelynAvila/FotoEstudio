@@ -96,9 +96,9 @@ const AUTH_USER_SELECT = `
   correo,
   telefono,
   contrasena_hash,
-  idRol,
+  idrol,
   idestado,
-  rol:rol!usuario_idRol_fkey(id, nombre, descripcion),
+  rol:rol!usuario_idrol_fkey(id, nombre, descripcion),
   estado:estado_usuario!usuario_idestado_fkey(id, nombre_estado, descripcion_estado),
   cliente:cliente!cliente_idusuario_fkey(idcliente, Descuento)
 `;
@@ -113,14 +113,38 @@ const hashPasswordWithDatabase = async (password) => {
   return hashed;
 };
 
-const verifyPasswordWithDatabase = async (password, storedHash) => {
+const verifyPasswordWithDatabase = async (password, storedHash, userId) => {
   if (!password || !storedHash) return false;
-  const { data, error } = await supabase.rpc('crypt', { password, salt: storedHash });
-  if (error || !data) {
-    console.error('[auth] Error verificando contraseña:', error);
-    return false;
+
+  // hashes creados con gen_salt('bf') empiezan con $2 (bcrypt)
+  if (storedHash.startsWith('$2')) {
+    const { data, error } = await supabase.rpc('crypt', { password, salt: storedHash });
+    if (error || !data) {
+      console.error('[auth] Error verificando contraseña:', error);
+      return false;
+    }
+    return data === storedHash;
   }
-  return data === storedHash;
+
+  // Si la contraseña quedó guardada en texto plano (creada manualmente),
+  // validamos y la re-protegemos en el acto para normalizar la base de datos.
+  if (storedHash === password && userId) {
+    try {
+      const hashedPassword = await hashPasswordWithDatabase(password);
+      const { error: updateError } = await supabase
+        .from('usuario')
+        .update({ contrasena_hash: hashedPassword })
+        .eq('id', userId);
+      if (updateError) {
+        console.error('[auth] No se pudo normalizar la contraseña sin hash:', updateError);
+      }
+    } catch (err) {
+      console.error('[auth] Error re-hasheando contraseña en texto plano:', err);
+    }
+    return true;
+  }
+
+  return false;
 };
 
 export function AuthProvider({ children }) {
@@ -141,12 +165,17 @@ export function AuthProvider({ children }) {
 
   const fallbackLogin = async (identifier, password) => {
     try {
+      const sanitizedIdentifier = (identifier ?? '').trim();
       let userRecord = null;
+
+      if (!sanitizedIdentifier) {
+        return { ok: false, status: 401, error: 'Credenciales inválidas' };
+      }
 
       const byUsername = await supabase
         .from('usuario')
         .select(AUTH_USER_SELECT)
-        .eq('username', identifier)
+        .eq('username', sanitizedIdentifier)
         .maybeSingle();
 
       if (byUsername.error) {
@@ -159,7 +188,7 @@ export function AuthProvider({ children }) {
         const byEmail = await supabase
           .from('usuario')
           .select(AUTH_USER_SELECT)
-          .eq('correo', identifier)
+          .eq('correo', sanitizedIdentifier)
           .maybeSingle();
         if (byEmail.error) {
           console.error('[login:fallback] error buscando por correo:', byEmail.error);
@@ -168,16 +197,18 @@ export function AuthProvider({ children }) {
         userRecord = byEmail.data;
       }
 
-      if (!userRecord) return { ok: false, error: 'Credenciales inválidas o usuario inactivo.' };
+      if (!userRecord) {
+        return { ok: false, status: 401, error: 'Credenciales inválidas' };
+      }
       const estadoActual = userRecord.estado?.nombre_estado ?? userRecord.estado ?? ''
       if (estadoActual && estadoActual.toLowerCase() !== 'activo') {
-        return { ok: false, error: 'Credenciales inválidas o usuario inactivo.' };
+        return { ok: false, status: 401, error: 'Credenciales inválidas' };
       }
 
-      const match = await verifyPasswordWithDatabase(password, userRecord.contrasena_hash);
-      if (!match) return { ok: false, error: 'Credenciales inválidas o usuario inactivo.' };
+      const match = await verifyPasswordWithDatabase(password, userRecord.contrasena_hash, userRecord.id);
+      if (!match) return { ok: false, status: 401, error: 'Credenciales inválidas' };
 
-      const { contrasena_hash, ...safePayload } = {
+      const { contrasena_hash: CONTRASENA_HASH_UNUSED, ...safePayload } = {
         ...userRecord,
         role: userRecord.rol?.nombre ?? userRecord.role ?? userRecord.rol,
         rol: userRecord.rol?.nombre ?? userRecord.rol,
@@ -222,12 +253,18 @@ export function AuthProvider({ children }) {
         if (isMissingFunctionError(error, 'login_usuario')) {
           return fallbackLogin(p_login, p_password);
         }
+
+        const message = String(error.message ?? '').toLowerCase();
+        if (error.code === 'PGRST116' || message.includes('credenciales') || message.includes('invalid')) {
+          return { ok: false, status: 401, error: 'Credenciales inválidas' };
+        }
+
         console.error('[login_usuario] error:', error);
         return { ok: false, error: 'Error del servidor. Intente de nuevo.' };
       }
 
       if (!data || data.length === 0) {
-        return { ok: false, error: 'Credenciales inválidas o usuario inactivo.' };
+        return { ok: false, status: 401, error: 'Credenciales inválidas' };
       }
 
       const u = mapUserPayload(data[0]);
