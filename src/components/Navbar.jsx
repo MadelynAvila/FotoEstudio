@@ -29,16 +29,13 @@ export default function Navbar(){
 
   return (
     <header className="sticky top-0 z-50 border-b border-[var(--border)] bg-white/90 backdrop-blur-xl">
-      <div className="container-1120 py-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <Link to="/" className="flex items-center gap-3">
-          <img src="/img/logo-mark.svg" alt="Aguín Fotografía" className="h-12 w-12 rounded-2xl shadow-sm shadow-umber/15"/>
-          <div className="flex flex-col leading-tight">
-            <span className="text-base font-semibold uppercase tracking-[0.3em] text-slate-500">Aguín</span>
-            <span className="text-2xl font-display text-umber -mt-1">Fotografía</span>
-          </div>
+      <div className="container-1120 py-4 flex flex-col items-center gap-4 md:flex-row md:items-center md:justify-between">
+        <Link to="/" className="text-center">
+          <span className="block text-xs uppercase tracking-[0.35em] text-slate-500">Estudio</span>
+          <span className="block text-3xl font-display text-umber leading-tight md:text-[2rem]">Aguín Fotografía</span>
         </Link>
         <nav className="w-full md:w-auto">
-          <ul className="flex flex-wrap items-center gap-2 md:justify-end">
+          <ul className="flex flex-wrap items-center justify-center gap-2 md:justify-end">
             {tabs.map(t => (
               <li key={t.to}>
                 <NavLink
