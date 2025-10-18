@@ -12,6 +12,7 @@ import Booking from './pages/Booking'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Reviews from './pages/Reviews'
+import MiCuenta from './pages/MiCuenta'
 import AdminDashboard from './pages/AdminDashboard'
 import AdminReservations from './pages/AdminReservations'
 import AdminGallery from './pages/AdminGallery'
@@ -36,6 +37,9 @@ export default function App(){
           <Route path="/reservar" element={<Booking />} />
           <Route path="/login" element={<Login />} />
           <Route path="/registrarse" element={<Register />} />
+          <Route element={<ProtectedRoute />}>
+            <Route path="/mi-cuenta" element={<MiCuenta />} />
+          </Route>
         </Route>
 
         {/* Panel admin (protegido, solo admin) */}
