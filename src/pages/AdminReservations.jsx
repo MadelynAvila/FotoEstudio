@@ -16,15 +16,6 @@ const defaultForm = {
   paqueteId: ''
 }
 
-function horaATotalMinutos(value) {
-  if (!value) return null
-  const [horas = '0', minutos = '0'] = String(value).split(':')
-  const h = Number.parseInt(horas, 10)
-  const m = Number.parseInt(minutos, 10)
-  if (Number.isNaN(h) || Number.isNaN(m)) return null
-  return h * 60 + m
-}
-
 function formatearHoraParaDB(value) {
   if (!value) return null
   const [horas = '00', minutos = '00'] = String(value).split(':')
@@ -76,7 +67,7 @@ export default function AdminReservations() {
     const [actividadesRes, paquetesRes, rolesRes] = await Promise.all([
       supabase
         .from('actividad')
-        .select('id, idcliente, idagenda, idpaquete, estado_pago, nombre_actividad, ubicacion')
+        .select('id, idusuario, idagenda, idpaquete, estado_pago, nombre_actividad, ubicacion')
         .order('id', { ascending: false }),
       supabase
         .from('paquete')
@@ -99,7 +90,7 @@ export default function AdminReservations() {
 
     const actividades = actividadesRes.data ?? []
     const agendaIds = Array.from(new Set(actividades.map(item => item.idagenda).filter(Boolean)))
-    const clienteIds = Array.from(new Set(actividades.map(item => item.idcliente).filter(Boolean)))
+    const clienteIds = Array.from(new Set(actividades.map(item => item.idusuario).filter(Boolean)))
 
     const { data: agendasData = [] } = agendaIds.length
       ? await supabase.from('agenda').select('id, fecha, horainicio, horafin, idfotografo').in('id', agendaIds)
@@ -118,7 +109,7 @@ export default function AdminReservations() {
 
     const formatted = actividades.map(item => {
       const agenda = agendaMap.get(item.idagenda)
-      const cliente = usuarioMap.get(item.idcliente)
+      const cliente = usuarioMap.get(item.idusuario)
       const fotografo = agenda ? usuarioMap.get(agenda.idfotografo) : null
       return {
         id: item.id,
@@ -256,7 +247,7 @@ export default function AdminReservations() {
       .from('actividad')
       .insert([
         {
-          idcliente: clienteData?.idusuario ?? usuarioId,
+          idusuario: clienteData?.idusuario ?? usuarioId,
           idagenda: agendaData.id,
           idpaquete: Number(form.paqueteId),
           estado_pago: formatEstado(form.estado),

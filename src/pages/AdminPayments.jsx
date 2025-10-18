@@ -28,7 +28,7 @@ export default function AdminPayments(){
         estado_pago,
         nombre_actividad,
         agenda:agenda ( fecha, horainicio ),
-        cliente:usuario!actividad_idcliente_fkey ( id, username, telefono ),
+        cliente:usuario!actividad_idusuario_fkey ( id, username, telefono ),
         paquete:paquete ( id, nombre_paquete, precio ),
         pago:pago ( id, monto, metodo_pago, fecha_pago )
       `)

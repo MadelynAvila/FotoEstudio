@@ -132,7 +132,7 @@ export default function MiCuenta () {
     paquete: normalizeSingle(reserva.paquete),
     resenas: ensureArray(reserva.resenas)
       .filter((resena) => resena?.idusuario === user?.id)
-      .map(({ idusuario, ...rest }) => rest)
+      .map(({ idusuario, ...rest }) => { void idusuario; return rest })
   })), [reservas, user?.id])
 
   const handleStartReview = (actividadId) => {

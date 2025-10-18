@@ -109,7 +109,7 @@ export async function getActividadesFotografo(idFotografo) {
         horafin,
         idfotografo
       ),
-      cliente:usuario!actividad_idcliente_fkey (
+      cliente:usuario!actividad_idusuario_fkey (
         id,
         username
       )
@@ -166,7 +166,7 @@ export async function getResenasFotografo(idFotografo) {
           nombre_paquete
         )
       ),
-      autor:usuario!resena_idcliente_fkey (
+      autor:usuario!resena_idusuario_fkey (
         id,
         username
       )
