@@ -15,11 +15,6 @@ const highlights = [
   },
 ]
 
-const stats = [
-  { label: 'Sesiones realizadas', value: '250+' },
-  { label: 'Clientes felices', value: '98%' },
-]
-
 export default function Home(){
   return (
     <div className="space-y-24">
@@ -37,14 +32,6 @@ export default function Home(){
               <a className="btn btn-primary" href="/reservar">Reservar sesión</a>
               <a className="btn btn-ghost border border-[color:var(--border)]" href="/portafolio">Ver portafolio</a>
             </div>
-            <dl className="grid grid-cols-2 gap-5 max-w-md">
-              {stats.map(item => (
-                <div key={item.label} className="card p-5 bg-white/80 backdrop-blur">
-                  <dt className="text-xs uppercase tracking-[0.3em] text-slate-500">{item.label}</dt>
-                  <dd className="text-2xl font-display text-umber">{item.value}</dd>
-                </div>
-              ))}
-            </dl>
           </div>
           <div className="relative">
             <figure className="relative overflow-hidden rounded-[2.75rem] border border-[color:var(--border)] shadow-soft aspect-[4/5] md:aspect-[5/6]">
