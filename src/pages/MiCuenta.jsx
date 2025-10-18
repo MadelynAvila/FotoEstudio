@@ -98,13 +98,6 @@ export default function MiCuenta () {
           horainicio,
           horafin,
           fotografo:usuario(username)
-        ),
-        resenas:resena(
-          id,
-          calificacion,
-          comentario,
-          fecha_resena,
-          idusuario
         )
       `)
       .eq('idusuario', user.id)
@@ -116,7 +109,24 @@ export default function MiCuenta () {
       setReservas([])
       setFeedback({ type: 'error', message: 'No pudimos cargar tus reservas. Intenta nuevamente en unos minutos.' })
     } else {
-      setReservas(Array.isArray(data) ? data : [])
+      const baseReservas = Array.isArray(data) ? data : []
+
+      const reservasConResena = await Promise.all(baseReservas.map(async (reserva) => {
+        const { data: resenasData, error: resenasError } = await supabase
+          .from('resena')
+          .select('id, calificacion, comentario, fecha_resena')
+          .eq('idactividad', reserva.id)
+          .eq('idusuario', user.id)
+
+        if (resenasError) {
+          console.error('No se pudo verificar la reseña del usuario', resenasError)
+          return { ...reserva, resenas: [] }
+        }
+
+        return { ...reserva, resenas: Array.isArray(resenasData) ? resenasData : [] }
+      }))
+
+      setReservas(reservasConResena)
     }
     setLoading(false)
   }
@@ -131,11 +141,12 @@ export default function MiCuenta () {
     agenda: normalizeSingle(reserva.agenda),
     paquete: normalizeSingle(reserva.paquete),
     resenas: ensureArray(reserva.resenas)
-      .filter((resena) => resena?.idusuario === user?.id)
-      .map(({ idusuario, ...rest }) => { void idusuario; return rest })
-  })), [reservas, user?.id])
+  })), [reservas])
 
-  const handleStartReview = (actividadId) => {
+  const handleOpenReview = (reservaObjetivo) => {
+    const actividadId = typeof reservaObjetivo === 'object' && reservaObjetivo !== null
+      ? reservaObjetivo.id
+      : reservaObjetivo
     const actividad = reservasConAgenda.find((reserva) => reserva.id === actividadId)
     if (!actividad) return
 
@@ -145,7 +156,9 @@ export default function MiCuenta () {
       return
     }
 
-    if (!hasSessionFinished(agenda?.fecha, agenda?.horafin)) {
+    const pagoCompletado = (actividad?.estado_pago || '').toString().trim().toLowerCase() === 'completada'
+
+    if (!pagoCompletado && !hasSessionFinished(agenda?.fecha, agenda?.horafin)) {
       setFeedback({ type: 'error', message: 'Podrás dejar una reseña una vez finalizada tu sesión.' })
       return
     }
@@ -225,7 +238,8 @@ export default function MiCuenta () {
             idusuario: user.id,
             idactividad: actividad.id,
             calificacion,
-            comentario
+            comentario,
+            fecha_resena: new Date().toISOString()
           }
         ])
 
@@ -233,7 +247,7 @@ export default function MiCuenta () {
         throw error
       }
 
-      setFeedback({ type: 'success', message: 'Gracias por compartir tu experiencia. Tu reseña ha sido registrada correctamente.' })
+      setFeedback({ type: 'success', message: '¡Gracias por tu reseña! Tu opinión nos ayuda a mejorar.' })
       handleCancelReview()
       fetchReservas()
     } catch (error) {
@@ -271,7 +285,8 @@ export default function MiCuenta () {
             const paquete = reserva.paquete ?? {}
             const resenas = reserva.resenas ?? []
             const tieneResena = resenas.length > 0
-            const puedeResenar = !tieneResena && hasSessionFinished(agenda?.fecha, agenda?.horafin)
+            const pagoCompletado = (reserva.estado_pago || '').toString().trim().toLowerCase() === 'completada'
+            const puedeResenar = !tieneResena && (pagoCompletado || hasSessionFinished(agenda?.fecha, agenda?.horafin))
 
             return (
               <article key={reserva.id} className="card p-6 space-y-4">
@@ -319,24 +334,30 @@ export default function MiCuenta () {
                 <section className="space-y-3">
                   <h3 className="text-lg font-semibold">Tu experiencia</h3>
                   {tieneResena ? (
-                    resenas.map((resena) => (
-                      <div key={resena.id} className="rounded-xl2 border border-dashed border-umber/30 bg-sand/40 p-4 space-y-2">
-                        <div className="flex items-center gap-2">
-                          <span>{renderStars(resena.calificacion)}</span>
-                          <span className="text-sm text-slate-600">({resena.calificacion}/5)</span>
+                    <div className="space-y-3">
+                      <p className="text-emerald-600">✅ Ya calificaste esta sesión.</p>
+                      {resenas.map((resena) => (
+                        <div key={resena.id} className="rounded-xl2 border border-dashed border-umber/30 bg-sand/40 p-4 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span>{renderStars(resena.calificacion)}</span>
+                            <span className="text-sm text-slate-600">({resena.calificacion}/5)</span>
+                          </div>
+                          <p className="text-sm text-slate-700 whitespace-pre-line">{resena.comentario}</p>
+                          {resena.fecha_resena && (
+                            <p className="text-xs text-slate-500">Publicado el {formatDate(resena.fecha_resena, 'short')}</p>
+                          )}
                         </div>
-                        <p className="text-sm text-slate-700 whitespace-pre-line">{resena.comentario}</p>
-                        {resena.fecha_resena && (
-                          <p className="text-xs text-slate-500">Publicado el {formatDate(resena.fecha_resena, 'short')}</p>
-                        )}
-                      </div>
-                    ))
+                      ))}
+                    </div>
                   ) : (
                     <div className="space-y-3">
                       <p className="text-sm text-slate-600">
                         Comparte cómo fue tu sesión para ayudar a otros clientes.
                       </p>
-                      {puedeResenar ? (
+                      <p className="text-sm text-slate-500">
+                        Podrás dejar una reseña una vez finalizada tu sesión.
+                      </p>
+                      {puedeResenar && (
                         reviewingId === reserva.id ? (
                           <form onSubmit={handleSubmitReview} className="grid gap-3 p-4 border border-dashed border-umber/40 rounded-xl2 bg-sand/30">
                             <label className="grid gap-1 text-sm">
@@ -365,19 +386,19 @@ export default function MiCuenta () {
                                 Cancelar
                               </button>
                               <button type="submit" className="btn btn-primary sm:w-auto" disabled={submitting}>
-                                {submitting ? 'Guardando reseña…' : 'Guardar reseña'}
+                                {submitting ? 'Guardando reseña…' : 'Enviar reseña'}
                               </button>
                             </div>
                           </form>
                         ) : (
-                          <button type="button" className="btn btn-primary" onClick={() => handleStartReview(reserva.id)}>
-                            Califícanos
+                          <button
+                            type="button"
+                            className="btn btn-secondary mt-2"
+                            onClick={() => handleOpenReview(reserva)}
+                          >
+                            ⭐ Califícanos
                           </button>
                         )
-                      ) : (
-                        <p className="text-sm text-slate-500">
-                          Podrás dejar una reseña una vez finalizada tu sesión.
-                        </p>
                       )}
                     </div>
                   )}
