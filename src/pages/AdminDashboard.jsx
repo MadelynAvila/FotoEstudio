@@ -59,7 +59,7 @@ export default function AdminDashboard(){
             nombre_actividad,
             ubicacion,
             agenda:agenda ( fecha, horainicio, horafin ),
-            cliente:usuario!actividad_idcliente_fkey ( id, username, telefono ),
+            cliente:usuario!actividad_idusuario_fkey ( id, username, telefono ),
             paquete:paquete ( id, nombre_paquete ),
             pago:pago ( id, monto, fecha_pago )
           `)
