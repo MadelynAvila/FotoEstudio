@@ -107,10 +107,19 @@ export default function AdminClients(){
   const openHistory = async (cliente) => {
     setHistoryPanel({ visible: true, loading: true, reservas: [], cliente, message: '' })
 
+    if (!cliente?.usuarioId) {
+      setHistoryPanel(prev => ({
+        ...prev,
+        loading: false,
+        message: 'No encontramos un usuario asociado a este cliente. Verifica la información antes de consultar nuevamente.'
+      }))
+      return
+    }
+
     const { data, error } = await supabase
       .from('actividad')
       .select('id, estado_pago, nombre_actividad, ubicacion, agenda:agenda ( fecha, horainicio, horafin ), paquete:paquete ( nombre_paquete )')
-      .eq('idcliente', cliente.id)
+      .eq('idusuario', cliente.usuarioId)
       .order('id', { ascending: false })
 
     if (error) {
@@ -255,8 +264,8 @@ export default function AdminClients(){
   const clientesSinEstado = useMemo(() => clientes.filter(cliente => !cliente.estadoId).length, [clientes])
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div className="admin-page">
+      <div className="admin-columns xl:grid-cols-4">
         <div className="card p-4 bg-gradient-to-br from-amber-50 to-white border border-amber-100">
           <p className="text-xs uppercase tracking-wide text-amber-600">Clientes totales</p>
           <p className="mt-2 text-3xl font-semibold text-umber">{totalClientes}</p>
@@ -280,8 +289,8 @@ export default function AdminClients(){
       </div>
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-        <div className="card flex-1 p-5 space-y-4">
-          <header className="flex flex-wrap items-center justify-between gap-3">
+        <div className="admin-section flex-1 space-y-4">
+          <header className="admin-header">
             <div>
               <h1 className="text-xl font-semibold text-umber">Gestión de clientes</h1>
               <p className="muted text-sm">Registra y administra la base de clientes que reservan sesiones.</p>
@@ -339,14 +348,17 @@ export default function AdminClients(){
         </div>
       </div>
 
-      <div className="card p-5">
-        <h2 className="text-lg font-semibold text-umber mb-3">Clientes registrados</h2>
+      <div className="admin-section">
+        <div className="admin-header">
+          <h2 className="text-lg font-semibold text-umber">Clientes registrados</h2>
+          <span className="text-xs uppercase tracking-[0.3em] text-slate-500">{clientes.length}</span>
+        </div>
         {loading ? (
           <p className="muted text-sm">Cargando clientes…</p>
         ) : clientes.length ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-sand text-left uppercase text-xs tracking-wide text-slate-600">
+          <div className="table-responsive">
+            <table className="table">
+              <thead>
                 <tr>
                   <th className="p-2">Nombre</th>
                   <th className="p-2">Teléfono</th>
@@ -358,13 +370,13 @@ export default function AdminClients(){
               </thead>
               <tbody>
                 {clientes.map(cliente => (
-                  <tr key={cliente.id} className="border-b last:border-0">
+                  <tr key={cliente.id}>
                     <td className="p-2 font-medium text-slate-700">{cliente.nombrecompleto}</td>
                     <td className="p-2">{cliente.telefono || '—'}</td>
                     <td className="p-2">{cliente.correo || '—'}</td>
                     <td className="p-2">
                       <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center rounded-full bg-sand px-2 py-0.5 text-xs font-medium text-amber-700">
+                        <span className="badge-soft">
                           {estadoOptions.find(estado => estado.id === cliente.estadoId)?.nombre_estado || 'Sin estado'}
                         </span>
                         <select
@@ -399,7 +411,7 @@ export default function AdminClients(){
       </div>
 
       {historyPanel.visible && (
-        <div className="card p-5">
+        <div className="admin-section">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div>
               <h3 className="text-lg font-semibold text-umber">Historial de reservas</h3>

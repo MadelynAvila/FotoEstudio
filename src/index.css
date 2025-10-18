@@ -13,3 +13,13 @@
 .btn-ghost{ @apply bg-white text-umber border-umber hover:bg-sand; }
 .muted{ @apply text-neutral-500; }
 .container-1120{ @apply max-w-[1120px] mx-auto px-6; }
+.admin-page{ @apply space-y-6; }
+.admin-header{ @apply flex flex-col gap-3 md:flex-row md:items-center md:justify-between; }
+.admin-section{ @apply card p-6 space-y-4; }
+.admin-columns{ @apply grid gap-4 md:grid-cols-2 xl:grid-cols-3; }
+.badge{ @apply inline-flex items-center rounded-full border px-2 py-1 text-xs font-semibold uppercase tracking-wide; }
+.badge-soft{ @apply badge border-amber-200 bg-sand text-amber-700; }
+.table-responsive{ @apply overflow-x-auto; }
+.table{ @apply min-w-full text-sm; }
+.table thead{ @apply bg-sand text-left uppercase text-xs tracking-wide text-slate-600; }
+.table tbody tr{ @apply border-b last:border-0; }
