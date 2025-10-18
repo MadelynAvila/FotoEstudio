@@ -1,8 +1,11 @@
-const navigationLinks = [
+const exploreLinks = [
   { label: 'Inicio', href: '/' },
   { label: 'Servicios', href: '/servicios' },
   { label: 'Paquetes', href: '/paquetes' },
   { label: 'Contacto', href: '/#contacto' },
+]
+
+const legalLinks = [
   { label: 'Política de Privacidad', href: '/politica-privacidad' },
   { label: 'Términos de uso', href: '/terminos' },
 ]
@@ -18,10 +21,15 @@ export default function Footer(){
   return (
     <footer className="mt-24 border-t border-[color:var(--border)] bg-[#f9f6f2] text-slate-600">
       <div className="container-1120 flex flex-col gap-12 py-16 md:flex-row md:justify-between">
-        <div className="max-w-xl space-y-5">
-          <div className="space-y-1">
-            <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Aguín Fotografía</p>
-            <p className="text-3xl font-display text-umber">Historias con luz cálida y alma editorial</p>
+        <div className="max-w-xl space-y-6">
+          <div className="flex items-center gap-3">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm">
+              <img src="/img/logo-mark.svg" alt="Logotipo Aguín Fotografía" className="h-8 w-8" />
+            </span>
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Aguín Fotografía</p>
+              <p className="text-3xl font-display text-umber">Historias con luz cálida y alma editorial</p>
+            </div>
           </div>
           <p className="text-sm leading-relaxed text-slate-500">
             Un estudio dedicado a diseñar experiencias fotográficas sensibles, contemporáneas y profundamente humanas. Cada sesión se construye a tu medida para que la imagen final cuente la historia que deseas compartir.
@@ -42,18 +50,35 @@ export default function Footer(){
           </div>
         </div>
 
-        <div className="grid gap-6 text-sm md:grid-cols-2 md:gap-12">
-          <nav className="grid gap-3">
-            {navigationLinks.map(link => (
-              <a
-                key={link.label}
-                href={link.href}
-                className="transition hover:text-umber"
-              >
-                {link.label}
-              </a>
-            ))}
-          </nav>
+        <div className="grid gap-8 text-sm md:grid-cols-2 md:gap-12">
+          <div className="space-y-3">
+            <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Explora</p>
+            <nav className="grid gap-3">
+              {exploreLinks.map(link => (
+                <a
+                  key={link.label}
+                  href={link.href}
+                  className="transition hover:text-umber"
+                >
+                  {link.label}
+                </a>
+              ))}
+            </nav>
+          </div>
+          <div className="space-y-3">
+            <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Legal</p>
+            <nav className="grid gap-3">
+              {legalLinks.map(link => (
+                <a
+                  key={link.label}
+                  href={link.href}
+                  className="transition hover:text-umber"
+                >
+                  {link.label}
+                </a>
+              ))}
+            </nav>
+          </div>
         </div>
       </div>
 
