@@ -24,6 +24,8 @@ const formatearHoraSQL = (hora) => {
   return `${hh}:${mm}:00`
 }
 
+const MIN_BUFFER_MINUTES = 60
+
 /** Normaliza fecha para que siempre quede en formato YYYY-MM-DD */
 const normalizarFechaInput = (valor) => {
   if (!valor) return ''
@@ -207,6 +209,7 @@ export default function Booking() {
 
       fotografosList.forEach(fotografo => {
         mapaDisponibilidad[fotografo.id] = false
+        mapaAgenda[fotografo.id] = null
       })
 
       ;(agendas ?? []).forEach(slot => {
@@ -216,20 +219,8 @@ export default function Booking() {
         agendasPorFotografo.get(slot.idfotografo).push(slot)
       })
 
-      const MIN_BUFFER_MINUTES = 60
-
-      ;(agendas ?? []).forEach(slot => {
-        if (slot.disponible !== true) return
-        if (mapaDisponibilidad[slot.idfotografo]) return
-
-        const ini = horaATotalMinutos(slot.horainicio)
-        const fin = horaATotalMinutos(slot.horafin)
-        if (ini === null || fin === null) return
-        if (!(ini <= inicioCliente && finCliente <= fin)) return
-
-        const sesionesFotografo = (agendasPorFotografo.get(slot.idfotografo) ?? []).filter(
-          sesion => sesion.id !== slot.id && sesion.disponible !== true
-        )
+      fotografosList.forEach(fotografo => {
+        const sesionesFotografo = agendasPorFotografo.get(fotografo.id) ?? []
 
         const hayConflicto = sesionesFotografo.some(sesion => {
           const iniSesion = horaATotalMinutos(sesion.horainicio)
@@ -248,9 +239,33 @@ export default function Booking() {
           return false
         })
 
-        if (!hayConflicto) {
-          mapaDisponibilidad[slot.idfotografo] = true
-          mapaAgenda[slot.idfotografo] = slot.id
+        if (hayConflicto) {
+          mapaDisponibilidad[fotografo.id] = false
+          return
+        }
+
+        const slotDisponible = sesionesFotografo.find(slot => {
+          if (slot.disponible !== true) return false
+          const ini = horaATotalMinutos(slot.horainicio)
+          const fin = horaATotalMinutos(slot.horafin)
+          if (ini === null || fin === null) return false
+          return ini <= inicioCliente && finCliente <= fin
+        })
+
+        mapaDisponibilidad[fotografo.id] = true
+
+        if (slotDisponible) {
+          mapaAgenda[fotografo.id] = {
+            tipo: 'existente',
+            agendaId: slotDisponible.id
+          }
+        } else {
+          mapaAgenda[fotografo.id] = {
+            tipo: 'nuevo',
+            fecha: fechaSeleccionada,
+            horainicio: horaInicioSQL,
+            horafin: horaFinSQL
+          }
         }
       })
 
@@ -311,7 +326,12 @@ export default function Booking() {
     }
 
     if (disponibilidadFotografos[fotografoId] === false) {
-      setError('El fotógrafo seleccionado no está disponible en ese horario.')
+      const detalleAgenda = agendaDisponiblePorFotografo[fotografoId]
+      if (detalleAgenda === null) {
+        setError('El horario seleccionado está demasiado cerca de otra sesión.')
+      } else {
+        setError('El fotógrafo seleccionado no está disponible en ese horario.')
+      }
       return
     }
 
@@ -334,47 +354,123 @@ export default function Booking() {
         clienteId = nuevoCliente.idcliente
       }
 
-      const agendaIdSeleccionada = agendaDisponiblePorFotografo[fotografoId]
-      if (!agendaIdSeleccionada) {
+      const horaInicioSQL = formatearHoraSQL(horaInicio)
+      const horaFinSQL = formatearHoraSQL(horaFin)
+      if (!horaInicioSQL || !horaFinSQL) {
+        setError('Selecciona un horario válido para continuar.')
+        return
+      }
+
+      const agendaSeleccionada = agendaDisponiblePorFotografo[fotografoId]
+      if (!agendaSeleccionada) {
         setError('El horario seleccionado ya no está disponible.')
         return
       }
+      let agendaIdFinal = null
 
-      const { data: agendaSeleccionada, error: agendaError } = await supabase
-        .from('agenda')
-        .select('id, disponible, fecha, horainicio, horafin, idfotografo')
-        .eq('id', agendaIdSeleccionada)
-        .maybeSingle()
+      if (typeof agendaSeleccionada === 'object' && agendaSeleccionada?.tipo === 'nuevo') {
+        const { data: sesionesFotografo, error: sesionesError } = await supabase
+          .from('agenda')
+          .select('id, horainicio, horafin, disponible')
+          .eq('idfotografo', Number(fotografoId))
+          .eq('fecha', fechaSeleccionada)
 
-      if (agendaError || !agendaSeleccionada) {
-        setError('No fue posible validar la disponibilidad. Intenta nuevamente.')
-        return
+        if (sesionesError) {
+          setError('No fue posible validar la agenda del fotógrafo.')
+          return
+        }
+
+        const conflicto = (sesionesFotografo ?? []).some(sesion => {
+          const iniSesion = horaATotalMinutos(sesion.horainicio)
+          const finSesion = horaATotalMinutos(sesion.horafin)
+          if (iniSesion === null || finSesion === null) return false
+
+          const seSuperponen = minutosFin > iniSesion && minutosInicio < finSesion
+          if (seSuperponen) return true
+
+          const diferenciaAnterior = minutosInicio - finSesion
+          if (diferenciaAnterior >= 0 && diferenciaAnterior < MIN_BUFFER_MINUTES) return true
+
+          const diferenciaPosterior = iniSesion - minutosFin
+          if (diferenciaPosterior >= 0 && diferenciaPosterior < MIN_BUFFER_MINUTES) return true
+
+          return false
+        })
+
+        if (conflicto) {
+          setError('El horario seleccionado está demasiado cerca de otra sesión.')
+          return
+        }
+
+        const { data: nuevaAgenda, error: nuevaAgendaError } = await supabase
+          .from('agenda')
+          .insert([
+            {
+              fecha: fechaSeleccionada,
+              horainicio: horaInicioSQL,
+              horafin: horaFinSQL,
+              disponible: false,
+              idfotografo: Number(fotografoId)
+            }
+          ])
+          .select('id')
+          .single()
+
+        if (nuevaAgendaError || !nuevaAgenda) {
+          setError('Error creando la agenda de la reserva.')
+          return
+        }
+
+        agendaIdFinal = nuevaAgenda.id
+      } else {
+        const agendaIdSeleccionada =
+          typeof agendaSeleccionada === 'object' && agendaSeleccionada?.agendaId
+            ? agendaSeleccionada.agendaId
+            : agendaSeleccionada
+
+        const { data: agendaExistente, error: agendaError } = await supabase
+          .from('agenda')
+          .select('id, disponible, fecha, horainicio, horafin, idfotografo')
+          .eq('id', agendaIdSeleccionada)
+          .maybeSingle()
+
+        if (agendaError || !agendaExistente) {
+          setError('No fue posible validar la disponibilidad. Intenta nuevamente.')
+          return
+        }
+
+        const fechaAgenda = normalizarFechaInput(agendaExistente.fecha)
+        if (fechaAgenda !== fechaSeleccionada) {
+          setError('El horario seleccionado no coincide con la fecha indicada.')
+          return
+        }
+
+        const inicioAgenda = horaATotalMinutos(agendaExistente.horainicio)
+        const finAgenda = horaATotalMinutos(agendaExistente.horafin)
+        if (inicioAgenda === null || finAgenda === null || inicioAgenda > minutosInicio || finAgenda < minutosFin) {
+          setError('El horario seleccionado ya no coincide con la agenda disponible.')
+          return
+        }
+
+        if (!agendaExistente.disponible) {
+          setError('El horario elegido ya fue reservado.')
+          return
+        }
+
+        await supabase
+          .from('agenda')
+          .update({ disponible: false })
+          .eq('id', agendaExistente.id)
+          .eq('idfotografo', Number(fotografoId))
+          .eq('fecha', fechaSeleccionada)
+
+        agendaIdFinal = agendaExistente.id
       }
 
-      const fechaAgenda = normalizarFechaInput(agendaSeleccionada.fecha)
-      if (fechaAgenda !== fechaSeleccionada) {
-        setError('El horario seleccionado no coincide con la fecha indicada.')
+      if (!agendaIdFinal) {
+        setError('No fue posible asignar la agenda seleccionada.')
         return
       }
-
-      const inicioAgenda = horaATotalMinutos(agendaSeleccionada.horainicio)
-      const finAgenda = horaATotalMinutos(agendaSeleccionada.horafin)
-      if (inicioAgenda === null || finAgenda === null || inicioAgenda > minutosInicio || finAgenda < minutosFin) {
-        setError('El horario seleccionado ya no coincide con la agenda disponible.')
-        return
-      }
-
-      if (!agendaSeleccionada.disponible) {
-        setError('El horario elegido ya fue reservado.')
-        return
-      }
-
-      await supabase
-        .from('agenda')
-        .update({ disponible: false })
-        .eq('id', agendaSeleccionada.id)
-        .eq('idfotografo', Number(fotografoId))
-        .eq('fecha', fechaSeleccionada)
 
       const paqueteSel = paquetes.find(p => String(p.id) === String(paqueteId))
       const nombreActividad = paqueteSel ? `${paqueteSel.nombre_paquete} - ${nombre}` : nombre
@@ -384,7 +480,7 @@ export default function Booking() {
         .insert([
           {
             idcliente: clienteId,
-            idagenda: agendaSeleccionada.id,
+            idagenda: agendaIdFinal,
             idpaquete: Number(paqueteId),
             estado_pago: 'Pendiente',
             nombre_actividad: nombreActividad,
