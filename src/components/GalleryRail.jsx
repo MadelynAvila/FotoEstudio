@@ -8,25 +8,32 @@ export default function GalleryRail() {
   ];
 
   return (
-    <section className="py-6">
-      <div className="container-1120">
-        <h2 className="text-center text-2xl font-display mb-3">Galería de imágenes</h2>
+    <section className="page-section pt-0">
+      <div className="section-shell">
+        <div className="section-heading text-center mx-auto">
+          <span className="section-eyebrow mx-auto">Portafolio en movimiento</span>
+          <h2 className="text-3xl md:text-4xl">Una pincelada de nuestro estilo</h2>
+          <p className="section-subtitle mx-auto text-center">
+            Retratos editoriales, lifestyle y fotografía de producto con una estética cálida y contemporánea.
+          </p>
+        </div>
 
-
-        {/* Carrusel de imágenes */}
-        <div
-          className="flex gap-3 overflow-x-auto p-3 border rounded-xl2 bg-white"
-          style={{ scrollSnapType: 'x mandatory' }}
-        >
-          {images.map((src, i) => (
-            <figure
-              key={i}
-              className="min-w-[220px] h-[180px] rounded-xl2 overflow-hidden bg-sand border"
-              style={{ scrollSnapAlign: 'start' }}
-            >
-              <img src={src} alt={`Muestra ${i + 1}`} className="w-full h-full object-cover grayscale" />
-            </figure>
-          ))}
+        <div className="relative">
+          <div className="pointer-events-none absolute inset-0 rounded-[2.5rem] border border-white/40 bg-white/40 backdrop-blur" aria-hidden></div>
+          <div
+            className="relative flex gap-5 overflow-x-auto rounded-[2.5rem] p-6 border border-[color:var(--border)] bg-white shadow-soft"
+            style={{ scrollSnapType: 'x mandatory' }}
+          >
+            {images.map((src, i) => (
+              <figure
+                key={i}
+                className="min-w-[240px] sm:min-w-[260px] h-[200px] sm:h-[220px] rounded-[2rem] overflow-hidden bg-sand border border-[color:var(--border)]"
+                style={{ scrollSnapAlign: 'start' }}
+              >
+                <img src={src} alt={`Muestra ${i + 1}`} className="w-full h-full object-cover" />
+              </figure>
+            ))}
+          </div>
         </div>
       </div>
     </section>

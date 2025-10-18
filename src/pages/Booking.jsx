@@ -515,119 +515,138 @@ export default function Booking() {
 
   const fotografoMessageClass =
     estadoFotografo === 'success'
-      ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+      ? 'border-emerald-300 bg-emerald-50/80 text-emerald-800'
       : estadoFotografo === 'alert'
-        ? 'border-red-300 bg-red-50 text-red-700'
-        : 'border-[var(--border)] bg-sand/40 text-slate-600'
+        ? 'border-red-300 bg-red-50/80 text-red-700'
+        : 'border-[color:var(--border)] bg-white/70 text-slate-600'
+
+  const inputClass = 'w-full rounded-2xl border border-[color:var(--border)] bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-umber/30 transition disabled:opacity-50 disabled:cursor-not-allowed'
 
   return (
-    <div className="container-1120 py-6">
-      <h2 className="text-2xl font-display mb-4">Reservar sesión</h2>
-      {!user && (
-        <div className="mb-4 border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900 rounded-xl2">
-          Debes iniciar sesión o registrarte para completar una reserva.
-        </div>
-      )}
-      <form onSubmit={handleSubmit} className="card p-4 grid gap-3 max-w-3xl">
-        <input placeholder="Nombre" value={form.nombre} onChange={e => updateField('nombre', e.target.value)} className="border rounded-xl2 px-3 py-2" disabled={!user || enviando} />
-        <input placeholder="Teléfono" value={form.telefono} onChange={e => updateField('telefono', e.target.value)} className="border rounded-xl2 px-3 py-2" disabled={!user || enviando} />
-        <input placeholder="Correo electrónico" value={form.correo} onChange={e => updateField('correo', e.target.value)} className="border rounded-xl2 px-3 py-2" disabled={!user || enviando} />
-                <select
-          value={form.paqueteId}
-          onChange={e => updateField('paqueteId', e.target.value)}
-          className="border rounded-xl2 px-3 py-2"
-          disabled={!user || enviando}
-        >
-          <option value="">Selecciona un paquete</option>
-          {paquetes.map(p => (
-            <option key={p.id} value={p.id}>
-              {p.nombre_paquete} {p.precio != null ? `- $${p.precio}` : ''}
-            </option>
-          ))}
-        </select>
-
-        <input
-          type="date"
-          value={form.fecha}
-          onChange={e => updateField('fecha', e.target.value)}
-          className="border rounded-xl2 px-3 py-2"
-          disabled={!user || enviando}
-        />
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <input
-            type="time"
-            value={form.horaInicio}
-            onChange={e => updateField('horaInicio', e.target.value)}
-            className="border rounded-xl2 px-3 py-2"
-            disabled={!user || enviando}
-          />
-          <input
-            type="time"
-            value={form.horaFin}
-            onChange={e => updateField('horaFin', e.target.value)}
-            className="border rounded-xl2 px-3 py-2"
-            disabled={!user || enviando}
-          />
+    <section className="page-section">
+      <div className="section-shell">
+        <div className="section-heading max-w-2xl">
+          <span className="section-eyebrow">Reservas</span>
+          <h1 className="text-3xl md:text-4xl">Agenda tu experiencia fotográfica</h1>
+          <p className="section-subtitle">
+            Elige el paquete ideal, indica tu disponibilidad y nosotros nos encargamos del resto. Nuestro equipo confirmará tu fecha cuanto antes.
+          </p>
         </div>
 
-        <input
-          placeholder="Ubicación del servicio"
-          value={form.ubicacion}
-          onChange={e => updateField('ubicacion', e.target.value)}
-          className="border rounded-xl2 px-3 py-2"
-          disabled={!user || enviando}
-        />
+        {!user && (
+          <div className="rounded-3xl border border-amber-300 bg-amber-50/80 px-6 py-4 text-sm text-amber-900">
+            Debes iniciar sesión o registrarte para completar una reserva.
+          </div>
+        )}
 
-        <select
-          value={form.formaPago}
-          onChange={e => updateField('formaPago', e.target.value)}
-          className="border rounded-xl2 px-3 py-2"
-          disabled={!user || enviando}
-        >
-          <option value="">Selecciona la forma de pago</option>
-          <option value="Transferencia">Transferencia</option>
-          <option value="Tarjeta">Tarjeta</option>
-          <option value="Efectivo">Efectivo</option>
-        </select>
+        <form onSubmit={handleSubmit} className="card max-w-3xl">
+          <div className="card-body grid gap-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <input placeholder="Nombre" value={form.nombre} onChange={e => updateField('nombre', e.target.value)} className={inputClass} disabled={!user || enviando} />
+              <input placeholder="Teléfono" value={form.telefono} onChange={e => updateField('telefono', e.target.value)} className={inputClass} disabled={!user || enviando} />
+            </div>
+            <input placeholder="Correo electrónico" value={form.correo} onChange={e => updateField('correo', e.target.value)} className={inputClass} disabled={!user || enviando} />
+            <select
+              value={form.paqueteId}
+              onChange={e => updateField('paqueteId', e.target.value)}
+              className={inputClass}
+              disabled={!user || enviando}
+            >
+              <option value="">Selecciona un paquete</option>
+              {paquetes.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.nombre_paquete} {p.precio != null ? `- Q${Number(p.precio).toLocaleString('es-GT')}` : ''}
+                </option>
+              ))}
+            </select>
 
-        <div
-          className={`rounded-xl2 border px-3 py-2 text-sm ${fotografoMessageClass}`}
-        >
-          <span
-            className={
-              estadoFotografo === 'success'
-                ? 'block text-xs font-semibold uppercase tracking-wide mb-1 text-emerald-700'
-                : estadoFotografo === 'alert'
-                  ? 'block text-xs font-semibold uppercase tracking-wide mb-1 text-red-700'
-                  : 'block text-xs font-semibold uppercase tracking-wide mb-1 text-slate-500'
-            }
-          >
-            Fotógrafo
-          </span>
-          <span>{mensajeFotografo}</span>
-          {estadoFotografo === 'success' && totalDisponibles > 0 && (
-            <ul className="mt-2 list-disc list-inside space-y-1 text-xs text-slate-600">
-              {fotografosList
-                .filter(f => disponibilidadFotografos[f.id])
-                .map(f => (
-                  <li key={f.id}>{f.username}</li>
-                ))}
-            </ul>
-          )}
-        </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <input
+                type="date"
+                value={form.fecha}
+                onChange={e => updateField('fecha', e.target.value)}
+                className={inputClass}
+                disabled={!user || enviando}
+              />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <input
+                  type="time"
+                  value={form.horaInicio}
+                  onChange={e => updateField('horaInicio', e.target.value)}
+                  className={inputClass}
+                  disabled={!user || enviando}
+                />
+                <input
+                  type="time"
+                  value={form.horaFin}
+                  onChange={e => updateField('horaFin', e.target.value)}
+                  className={inputClass}
+                  disabled={!user || enviando}
+                />
+              </div>
+            </div>
 
-        <button
-          className="btn btn-primary"
-          disabled={!user || enviando}
-        >
-          {enviando ? 'Enviando…' : 'Enviar'}
-        </button>
-      </form>
+            <input
+              placeholder="Ubicación del servicio"
+              value={form.ubicacion}
+              onChange={e => updateField('ubicacion', e.target.value)}
+              className={inputClass}
+              disabled={!user || enviando}
+            />
 
-      {error && <p className="mt-2 text-red-600 text-sm">{error}</p>}
-      {mensaje && <p className="mt-2 text-green-600">{mensaje}</p>}
-    </div>
+            <select
+              value={form.formaPago}
+              onChange={e => updateField('formaPago', e.target.value)}
+              className={inputClass}
+              disabled={!user || enviando}
+            >
+              <option value="">Selecciona la forma de pago</option>
+              <option value="Transferencia">Transferencia</option>
+              <option value="Tarjeta">Tarjeta</option>
+              <option value="Efectivo">Efectivo</option>
+            </select>
+
+            <div
+              className={`rounded-2xl border px-4 py-3 text-sm ${fotografoMessageClass}`}
+            >
+              <span
+                className={
+                  estadoFotografo === 'success'
+                    ? 'block text-xs font-semibold uppercase tracking-wide mb-1 text-emerald-700'
+                    : estadoFotografo === 'alert'
+                      ? 'block text-xs font-semibold uppercase tracking-wide mb-1 text-red-700'
+                      : 'block text-xs font-semibold uppercase tracking-wide mb-1 text-slate-500'
+                }
+              >
+                Fotógrafo
+              </span>
+              <span>{mensajeFotografo}</span>
+              {estadoFotografo === 'success' && totalDisponibles > 0 && (
+                <ul className="mt-2 list-disc list-inside space-y-1 text-xs text-slate-600">
+                  {fotografosList
+                    .filter(f => disponibilidadFotografos[f.id])
+                    .map(f => (
+                      <li key={f.id}>{f.username}</li>
+                    ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                className="btn btn-primary"
+                disabled={!user || enviando}
+              >
+                {enviando ? 'Enviando…' : 'Enviar solicitud'}
+              </button>
+              {mensaje && <span className="text-sm text-emerald-700">{mensaje}</span>}
+            </div>
+          </div>
+        </form>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+      </div>
+    </section>
   )
 }
 
