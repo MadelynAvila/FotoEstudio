@@ -334,20 +334,28 @@ export default function Booking() {
     try {
       setEnviando(true)
 
-      const { data: clienteExistente } = await supabase
+      const { data: clienteExistente, error: clienteExistenteError } = await supabase
         .from('cliente')
         .select('idcliente')
         .eq('idusuario', user.id)
         .maybeSingle()
 
-      let clienteId = clienteExistente?.idcliente ?? null
-      if (!clienteId) {
-        const { data: nuevoCliente } = await supabase
+      if (clienteExistenteError && clienteExistenteError.code !== 'PGRST116') {
+        setError('No fue posible validar la información del cliente.')
+        return
+      }
+
+      if (!clienteExistente?.idcliente) {
+        const { error: nuevoClienteError } = await supabase
           .from('cliente')
           .insert([{ idusuario: user.id, Descuento: 0 }])
           .select('idcliente')
           .single()
-        clienteId = nuevoCliente.idcliente
+
+        if (nuevoClienteError) {
+          setError('No fue posible registrar la información del cliente.')
+          return
+        }
       }
 
       const horaInicioSQL = formatearHoraSQL(horaInicio)
@@ -418,8 +426,18 @@ export default function Booking() {
       const paqueteIdNumerico = paqueteIdFinal != null && paqueteIdFinal !== '' ? Number(paqueteIdFinal) : null
       const nombreActividad = paqueteSel ? `${paqueteSel.nombre_paquete} - ${nombre}` : nombre
 
-      if (!agendaId || !user.id || paqueteIdNumerico == null || Number.isNaN(paqueteIdNumerico)) {
-        setError('Faltan datos para completar la reserva.')
+      if (!agendaId) {
+        setError('No se pudo registrar la agenda de la reserva.')
+        return
+      }
+
+      if (!user?.id) {
+        setError('No fue posible identificar al usuario autenticado. Inicia sesión nuevamente.')
+        return
+      }
+
+      if (paqueteIdNumerico == null || Number.isNaN(paqueteIdNumerico)) {
+        setError('Selecciona un paquete válido para continuar con la reserva.')
         return
       }
 
@@ -427,7 +445,7 @@ export default function Booking() {
         .from('actividad')
         .insert([
           {
-            idcliente: clienteId,
+            idusuario: user.id,
             idagenda: agendaId,
             idpaquete: paqueteIdNumerico,
             estado_pago: 'Pendiente',
