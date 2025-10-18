@@ -413,15 +413,16 @@ export default function Booking() {
               idfotografo: Number(fotografoId)
             }
           ])
-          .select('id')
-          .single()
+          .select()
 
-        if (nuevaAgendaError || !nuevaAgenda) {
+        const idAgendaCreada = nuevaAgenda?.[0]?.id ?? null
+
+        if (nuevaAgendaError || !idAgendaCreada) {
           setError('Error creando la agenda de la reserva.')
           return
         }
 
-        agendaIdFinal = nuevaAgenda.id
+        agendaIdFinal = idAgendaCreada
       } else {
         const agendaIdSeleccionada =
           typeof agendaSeleccionada === 'object' && agendaSeleccionada?.agendaId
@@ -475,7 +476,12 @@ export default function Booking() {
       const paqueteSel = paquetes.find(p => String(p.id) === String(paqueteId))
       const nombreActividad = paqueteSel ? `${paqueteSel.nombre_paquete} - ${nombre}` : nombre
 
-      const { data: actividadData } = await supabase
+      if (!agendaIdFinal || !user.id || !paqueteId) {
+        setError('Faltan datos para completar la reserva.')
+        return
+      }
+
+      const { data: actividadCreada, error: actividadError } = await supabase
         .from('actividad')
         .insert([
           {
@@ -487,20 +493,26 @@ export default function Booking() {
             ubicacion
           }
         ])
-        .select('id')
-        .single()
+        .select()
+
+      const actividadGenerada = actividadCreada?.[0] ?? null
+
+      if (actividadError || !actividadGenerada?.id) {
+        setError('No fue posible crear la actividad de la reserva.')
+        return
+      }
 
       const montoReserva = paqueteSel?.precio ?? 0
       await supabase.from('pago').insert([
         {
-          idactividad: actividadData.id,
+          idactividad: actividadGenerada.id,
           metodo_pago: formaPago,
           monto: montoReserva,
           detalle_pago: 'Pago pendiente registrado desde el panel web'
         }
       ])
 
-      setMensaje('Reserva enviada con éxito ✅')
+      setMensaje('Reserva creada correctamente.')
       setForm({ ...initialForm, nombre, telefono, correo })
     } finally {
       setEnviando(false)
