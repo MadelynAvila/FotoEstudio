@@ -42,28 +42,6 @@ const formatHour = (timeString) => {
   return `${hours.padStart(2, '0')}:${(minutes ?? '00').padStart(2, '0')}`
 }
 
-const buildDateTime = (fecha, hora) => {
-  if (!fecha) return null
-  const normalizedDate = typeof fecha === 'string' && fecha.includes('T')
-    ? fecha.split('T')[0]
-    : fecha
-  const normalizedTime = (hora ?? '').trim()
-  const [hours = '00', minutes = '00', seconds = '00'] = normalizedTime.split(':')
-  const hoursSafe = hours.padStart(2, '0')
-  const minutesSafe = minutes.padStart(2, '0')
-  const secondsSafe = seconds.padStart(2, '0')
-  const composed = `${normalizedDate}T${hoursSafe}:${minutesSafe}:${secondsSafe}`
-  const date = new Date(composed)
-  if (Number.isNaN(date.getTime())) return null
-  return date
-}
-
-const hasSessionFinished = (fecha, horafin) => {
-  const sessionEnd = buildDateTime(fecha, horafin)
-  if (!sessionEnd) return false
-  return sessionEnd.getTime() <= Date.now()
-}
-
 const renderStars = (rating) => {
   const stars = Math.round(Number(rating) || 0)
   if (stars <= 0) return '—'
@@ -150,7 +128,7 @@ export default function MiCuenta () {
     const actividad = reservasConAgenda.find((reserva) => reserva.id === actividadId)
     if (!actividad) return
 
-    const { resenas, agenda } = actividad
+    const { resenas } = actividad
     if (resenas.length > 0) {
       setFeedback({ type: 'error', message: 'Ya calificaste este servicio.' })
       return
@@ -158,8 +136,8 @@ export default function MiCuenta () {
 
     const pagoCompletado = (actividad?.estado_pago || '').toString().trim().toLowerCase() === 'completada'
 
-    if (!pagoCompletado && !hasSessionFinished(agenda?.fecha, agenda?.horafin)) {
-      setFeedback({ type: 'error', message: 'Podrás dejar una reseña una vez finalizada tu sesión.' })
+    if (!pagoCompletado) {
+      setFeedback({ type: 'error', message: 'Podrás dejar una reseña una vez completado tu pago.' })
       return
     }
 
@@ -184,7 +162,7 @@ export default function MiCuenta () {
     const actividad = reservasConAgenda.find((reserva) => reserva.id === reviewingId)
     if (!actividad) return
 
-    const { agenda, resenas } = actividad
+    const { resenas } = actividad
 
     if (resenas.length > 0) {
       setFeedback({ type: 'error', message: 'Ya calificaste este servicio.' })
@@ -192,8 +170,10 @@ export default function MiCuenta () {
       return
     }
 
-    if (!hasSessionFinished(agenda?.fecha, agenda?.horafin)) {
-      setFeedback({ type: 'error', message: 'Podrás dejar una reseña una vez finalizada tu sesión.' })
+    const pagoCompletado = (actividad?.estado_pago || '').toString().trim().toLowerCase() === 'completada'
+
+    if (!pagoCompletado) {
+      setFeedback({ type: 'error', message: 'Podrás dejar una reseña una vez completado tu pago.' })
       handleCancelReview()
       return
     }
@@ -286,7 +266,7 @@ export default function MiCuenta () {
             const resenas = reserva.resenas ?? []
             const tieneResena = resenas.length > 0
             const pagoCompletado = (reserva.estado_pago || '').toString().trim().toLowerCase() === 'completada'
-            const puedeResenar = !tieneResena && (pagoCompletado || hasSessionFinished(agenda?.fecha, agenda?.horafin))
+            const puedeResenar = !tieneResena && pagoCompletado
 
             return (
               <article key={reserva.id} className="card p-6 space-y-4">
