@@ -299,7 +299,18 @@ export default function Booking() {
       return
     }
 
-    const { nombre, telefono, correo, paqueteId, fecha, horaInicio, horaFin, ubicacion, formaPago, fotografoId } = form
+    const {
+      nombre,
+      telefono,
+      correo,
+      paqueteId,
+      fecha,
+      horaInicio,
+      horaFin,
+      ubicacion,
+      formaPago,
+      fotografoId
+    } = form
 
     if (!nombre || !telefono || !correo || !paqueteId || !fecha || !horaInicio || !horaFin || !ubicacion || !formaPago) {
       setError('Por favor completa todos los campos antes de enviar la reserva.')
@@ -366,7 +377,7 @@ export default function Booking() {
         setError('El horario seleccionado ya no está disponible.')
         return
       }
-      let agendaIdFinal = null
+      let agendaId = null
 
       if (typeof agendaSeleccionada === 'object' && agendaSeleccionada?.tipo === 'nuevo') {
         const { data: sesionesFotografo, error: sesionesError } = await supabase
@@ -422,7 +433,7 @@ export default function Booking() {
           return
         }
 
-        agendaIdFinal = idAgendaCreada
+        agendaId = idAgendaCreada
       } else {
         const agendaIdSeleccionada =
           typeof agendaSeleccionada === 'object' && agendaSeleccionada?.agendaId
@@ -465,18 +476,22 @@ export default function Booking() {
           .eq('idfotografo', Number(fotografoId))
           .eq('fecha', fechaSeleccionada)
 
-        agendaIdFinal = agendaExistente.id
+        agendaId = agendaExistente.id
       }
 
-      if (!agendaIdFinal) {
+      if (!agendaId) {
         setError('No fue posible asignar la agenda seleccionada.')
         return
       }
 
-      const paqueteSel = paquetes.find(p => String(p.id) === String(paqueteId))
+      const paqueteSel = paquetes.find(
+        p => String(p.id) === String(paqueteId) || String(p.id) === String(paqueteId?.id)
+      )
+      const paqueteIdFinal = paqueteSel?.id ?? (typeof paqueteId === 'object' ? paqueteId.id : paqueteId)
+      const paqueteIdNumerico = paqueteIdFinal != null && paqueteIdFinal !== '' ? Number(paqueteIdFinal) : null
       const nombreActividad = paqueteSel ? `${paqueteSel.nombre_paquete} - ${nombre}` : nombre
 
-      if (!agendaIdFinal || !user.id || !paqueteId) {
+      if (!agendaId || !user.id || paqueteIdNumerico == null || Number.isNaN(paqueteIdNumerico)) {
         setError('Faltan datos para completar la reserva.')
         return
       }
@@ -486,14 +501,18 @@ export default function Booking() {
         .insert([
           {
             idcliente: clienteId,
-            idagenda: agendaIdFinal,
-            idpaquete: Number(paqueteId),
+            idagenda: agendaId,
+            idpaquete: paqueteIdNumerico,
             estado_pago: 'Pendiente',
             nombre_actividad: nombreActividad,
             ubicacion
           }
         ])
         .select()
+
+      if (actividadError?.status === 409) {
+        console.error('Error de conflicto al crear actividad:', actividadError.message)
+      }
 
       const actividadGenerada = actividadCreada?.[0] ?? null
 
