@@ -158,14 +158,6 @@ export default function Booking() {
         return
       }
 
-      const inicioCliente = horaATotalMinutos(form.horaInicio)
-      const finCliente = horaATotalMinutos(form.horaFin)
-      if (inicioCliente === null || finCliente === null || inicioCliente >= finCliente) {
-        setDisponibilidadFotografos({})
-        setAgendaDisponiblePorFotografo({})
-        return
-      }
-
       const fechaSeleccionada = normalizarFechaInput(form.fecha)
       if (!fechaSeleccionada) {
         setDisponibilidadFotografos({})
@@ -176,6 +168,14 @@ export default function Booking() {
       const horaInicioSQL = formatearHoraSQL(form.horaInicio)
       const horaFinSQL = formatearHoraSQL(form.horaFin)
       if (!horaInicioSQL || !horaFinSQL) {
+        setDisponibilidadFotografos({})
+        setAgendaDisponiblePorFotografo({})
+        return
+      }
+
+      const inicioCliente = horaATotalMinutos(horaInicioSQL)
+      const finCliente = horaATotalMinutos(horaFinSQL)
+      if (inicioCliente === null || finCliente === null || inicioCliente >= finCliente) {
         setDisponibilidadFotografos({})
         setAgendaDisponiblePorFotografo({})
         return
@@ -193,9 +193,6 @@ export default function Booking() {
         .select('id, idfotografo, fecha, horainicio, horafin, disponible')
         .in('idfotografo', idsFotografos)
         .eq('fecha', fechaSeleccionada)
-        .eq('disponible', true)
-        .lte('horainicio', horaInicioSQL)
-        .gte('horafin', horaFinSQL)
 
       if (agendaError) {
         console.error('Error al consultar agenda:', agendaError)
@@ -206,16 +203,52 @@ export default function Booking() {
 
       const mapaDisponibilidad = {}
       const mapaAgenda = {}
+      const agendasPorFotografo = new Map()
 
       fotografosList.forEach(fotografo => {
         mapaDisponibilidad[fotografo.id] = false
       })
 
       ;(agendas ?? []).forEach(slot => {
+        if (!agendasPorFotografo.has(slot.idfotografo)) {
+          agendasPorFotografo.set(slot.idfotografo, [])
+        }
+        agendasPorFotografo.get(slot.idfotografo).push(slot)
+      })
+
+      const MIN_BUFFER_MINUTES = 60
+
+      ;(agendas ?? []).forEach(slot => {
+        if (slot.disponible !== true) return
+        if (mapaDisponibilidad[slot.idfotografo]) return
+
         const ini = horaATotalMinutos(slot.horainicio)
         const fin = horaATotalMinutos(slot.horafin)
         if (ini === null || fin === null) return
-        if (ini <= inicioCliente && finCliente <= fin) {
+        if (!(ini <= inicioCliente && finCliente <= fin)) return
+
+        const sesionesFotografo = (agendasPorFotografo.get(slot.idfotografo) ?? []).filter(
+          sesion => sesion.id !== slot.id && sesion.disponible !== true
+        )
+
+        const hayConflicto = sesionesFotografo.some(sesion => {
+          const iniSesion = horaATotalMinutos(sesion.horainicio)
+          const finSesion = horaATotalMinutos(sesion.horafin)
+          if (iniSesion === null || finSesion === null) return false
+
+          const seSuperponen = finCliente > iniSesion && inicioCliente < finSesion
+          if (seSuperponen) return true
+
+          const diferenciaAnterior = inicioCliente - finSesion
+          if (diferenciaAnterior >= 0 && diferenciaAnterior < MIN_BUFFER_MINUTES) return true
+
+          const diferenciaPosterior = iniSesion - finCliente
+          if (diferenciaPosterior >= 0 && diferenciaPosterior < MIN_BUFFER_MINUTES) return true
+
+          return false
+        })
+
+        if (!hayConflicto) {
           mapaDisponibilidad[slot.idfotografo] = true
           mapaAgenda[slot.idfotografo] = slot.id
         }
