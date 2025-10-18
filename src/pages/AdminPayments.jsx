@@ -122,12 +122,15 @@ export default function AdminPayments(){
   }
 
   return (
-    <div className="space-y-6">
+    <div className="admin-page">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-        <div className="card flex-1 p-5 space-y-4">
-          <header>
-            <h1 className="text-xl font-semibold text-umber">Control de pagos</h1>
-            <p className="muted text-sm">Registra pagos realizados y genera facturas imprimibles.</p>
+        <div className="admin-section flex-1 space-y-4">
+          <header className="admin-header">
+            <div>
+              <h1 className="text-xl font-semibold text-umber">Control de pagos</h1>
+              <p className="muted text-sm">Registra pagos realizados y genera facturas imprimibles.</p>
+            </div>
+            <button type="button" className="btn btn-ghost" onClick={() => { setForm(defaultForm); setFeedback({ type: '', message: '' }) }}>Limpiar formulario</button>
           </header>
 
           <form onSubmit={onSubmit} className="grid gap-3">
@@ -191,14 +194,17 @@ export default function AdminPayments(){
         </div>
       </div>
 
-      <div className="card p-5">
-        <h2 className="text-lg font-semibold text-umber mb-3">Historial de pagos</h2>
+      <div className="admin-section">
+        <div className="admin-header">
+          <h2 className="text-lg font-semibold text-umber">Historial de pagos</h2>
+          <span className="text-xs uppercase tracking-[0.3em] text-slate-500">{actividades.length}</span>
+        </div>
         {loading ? (
           <p className="muted text-sm">Cargando historial…</p>
         ) : actividades.length ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-sand text-left uppercase text-xs tracking-wide text-slate-600">
+          <div className="table-responsive">
+            <table className="table">
+              <thead>
                 <tr>
                   <th className="p-2">Reserva</th>
                   <th className="p-2">Cliente</th>
@@ -211,7 +217,7 @@ export default function AdminPayments(){
                 {actividades.map(actividad => {
                   const pago = Array.isArray(actividad.pago) ? actividad.pago[0] : actividad.pago
                   return (
-                    <tr key={actividad.id} className="border-b last:border-0">
+                    <tr key={actividad.id}>
                       <td className="p-2">
                         <div className="font-medium text-slate-700">Reserva #{actividad.id}</div>
                         <div className="text-xs text-slate-500">{actividad.agenda?.fecha ? new Date(actividad.agenda.fecha).toLocaleDateString('es-GT') : 'Sin fecha'}</div>
@@ -220,11 +226,7 @@ export default function AdminPayments(){
                         <div className="font-medium text-slate-700">{actividad.cliente?.username || 'Cliente sin nombre'}</div>
                         <div className="text-xs text-slate-500">{actividad.paquete?.nombre_paquete || 'Paquete sin definir'}</div>
                       </td>
-                      <td className="p-2">
-                        <span className="inline-flex items-center rounded-full bg-sand px-2 py-1 text-xs font-semibold uppercase tracking-wide">
-                          {(actividad.estado_pago || 'Pendiente')}
-                        </span>
-                      </td>
+                      <td className="p-2"><span className="badge-soft">{actividad.estado_pago || 'Pendiente'}</span></td>
                       <td className="p-2">
                         {pago ? (
                           <div>
@@ -256,7 +258,7 @@ export default function AdminPayments(){
       </div>
 
       {selectedInvoice && (
-        <div className="card p-5 print:p-0">
+        <div className="admin-section print:p-0">
           <header className="flex flex-wrap justify-between gap-3 mb-4 print:hidden">
             <h2 className="text-lg font-semibold text-umber">Factura del pago</h2>
             <div className="flex gap-2">

@@ -1,20 +1,37 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useAuth } from '../auth/authContext'
 import { supabase } from '../lib/supabaseClient'
 
-const defaultForm = { calificacion: 5, comentario: '' }
+const ESTADOS_CALIFICABLES = ['Completada', 'Pagado', 'Finalizada']
+const defaultForm = { actividadId: '', calificacion: '5', comentario: '' }
 
 export default function Reviews(){
+  const { user } = useAuth()
   const [resenas, setResenas] = useState([])
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState(defaultForm)
   const [submitting, setSubmitting] = useState(false)
   const [feedback, setFeedback] = useState({ type: '', message: '' })
+  const [actividades, setActividades] = useState([])
+  const [loadingActividades, setLoadingActividades] = useState(false)
 
   const fetchResenas = async () => {
     setLoading(true)
     const { data, error } = await supabase
       .from('resena')
-      .select('id, calificacion, comentario, fecha_resena')
+      .select(`
+        id,
+        calificacion,
+        comentario,
+        fecha_resena,
+        autor:usuario!resena_idusuario_fkey ( id, username ),
+        actividad:actividad!resena_idactividad_fkey (
+          id,
+          nombre_actividad,
+          estado_pago,
+          paquete:paquete ( nombre_paquete )
+        )
+      `)
       .order('id', { ascending: false })
 
     if (error) {
@@ -29,6 +46,39 @@ export default function Reviews(){
   useEffect(() => {
     fetchResenas()
   }, [])
+
+  useEffect(() => {
+    const fetchActividades = async () => {
+      if (!user?.id) {
+        setActividades([])
+        return
+      }
+
+      setLoadingActividades(true)
+      const { data, error } = await supabase
+        .from('actividad')
+        .select(`
+          id,
+          nombre_actividad,
+          estado_pago,
+          paquete:paquete ( nombre_paquete ),
+          agenda:agenda ( fecha, horainicio, horafin )
+        `)
+        .eq('idusuario', user.id)
+        .in('estado_pago', ESTADOS_CALIFICABLES)
+        .order('id', { ascending: false })
+
+      if (error) {
+        console.error('No se pudieron cargar las actividades del usuario para reseñas', error)
+        setActividades([])
+      } else {
+        setActividades(data ?? [])
+      }
+      setLoadingActividades(false)
+    }
+
+    fetchActividades()
+  }, [user?.id])
 
   const promedio = useMemo(() => {
     if (!resenas.length) return null
@@ -46,6 +96,17 @@ export default function Reviews(){
     event.preventDefault()
     setFeedback({ type: '', message: '' })
 
+    if (!user?.id) {
+      setFeedback({ type: 'error', message: 'Inicia sesión para calificar una sesión realizada con nuestro equipo.' })
+      return
+    }
+
+    const actividadId = Number(form.actividadId)
+    if (!Number.isFinite(actividadId) || actividadId <= 0) {
+      setFeedback({ type: 'error', message: 'Selecciona la reserva que deseas calificar.' })
+      return
+    }
+
     const calificacion = Number(form.calificacion)
     if (!Number.isFinite(calificacion) || calificacion < 1 || calificacion > 5) {
       setFeedback({ type: 'error', message: 'El puntaje debe ser un valor entre 1 y 5.' })
@@ -59,7 +120,35 @@ export default function Reviews(){
     }
 
     setSubmitting(true)
-    const { error } = await supabase.from('resena').insert([{ calificacion, comentario }])
+    const { data: existingReview, error: existingReviewError } = await supabase
+      .from('resena')
+      .select('id')
+      .eq('idusuario', user.id)
+      .eq('idactividad', actividadId)
+      .maybeSingle()
+
+    if (existingReviewError) {
+      console.error('No se pudo validar reseñas previas del usuario', existingReviewError)
+      setFeedback({ type: 'error', message: 'No pudimos validar tu reseña anterior. Intenta nuevamente más tarde.' })
+      setSubmitting(false)
+      return
+    }
+
+    if (existingReview) {
+      setFeedback({ type: 'error', message: 'Ya calificaste esta reserva anteriormente.' })
+      setSubmitting(false)
+      return
+    }
+
+    const { error } = await supabase.from('resena').insert([
+      {
+        idusuario: user.id,
+        idactividad: actividadId,
+        calificacion,
+        comentario,
+        fecha_resena: new Date().toISOString()
+      }
+    ])
 
     if (error) {
       console.error('No se pudo registrar la reseña pública', error)
@@ -68,6 +157,9 @@ export default function Reviews(){
       setFeedback({ type: 'success', message: '¡Gracias por compartir tu experiencia! Tu reseña se publicó correctamente.' })
       resetForm()
       fetchResenas()
+      if (user?.id) {
+        setActividades(prev => prev.filter(item => Number(item.id) !== actividadId))
+      }
     }
 
     setSubmitting(false)
@@ -98,6 +190,35 @@ export default function Reviews(){
 
           <form onSubmit={onSubmit} className="grid gap-4">
             <label className="grid gap-1 text-sm">
+              <span className="font-medium text-slate-700">Selecciona la sesión que deseas calificar</span>
+              <select
+                value={form.actividadId}
+                onChange={event => updateField('actividadId', event.target.value)}
+                className="border rounded-xl2 px-3 py-2"
+                disabled={submitting || loadingActividades || !user}
+              >
+                <option value="">{!user ? 'Inicia sesión para ver tus reservas' : 'Elige una reserva completada'}</option>
+                {actividades.map(actividad => {
+                  const nombrePaquete = actividad.paquete?.nombre_paquete
+                  const agenda = Array.isArray(actividad.agenda) ? actividad.agenda[0] : actividad.agenda
+                  const fecha = agenda?.fecha ? new Date(agenda.fecha).toLocaleDateString('es-GT') : 'Fecha por definir'
+                  return (
+                    <option key={actividad.id} value={actividad.id}>
+                      #{actividad.id} — {nombrePaquete || actividad.nombre_actividad || 'Reserva sin título'} ({fecha})
+                    </option>
+                  )
+                })}
+              </select>
+              {user && loadingActividades && (
+                <span className="text-xs text-slate-500">Cargando tus reservas…</span>
+              )}
+              {!user && (
+                <span className="text-xs text-slate-500">
+                  Debes iniciar sesión para calificar. Ve a <a href="/mi-cuenta" className="font-semibold text-umber">Mi cuenta</a> y elige una reserva completada.
+                </span>
+              )}
+            </label>
+            <label className="grid gap-1 text-sm">
               <span className="font-medium text-slate-700">Puntaje (1 a 5 estrellas)</span>
               <input
                 type="number"
@@ -106,6 +227,7 @@ export default function Reviews(){
                 value={form.calificacion}
                 onChange={event => updateField('calificacion', event.target.value)}
                 className="border rounded-xl2 px-3 py-2"
+                disabled={submitting || !user}
               />
             </label>
             <label className="grid gap-1 text-sm">
@@ -115,10 +237,11 @@ export default function Reviews(){
                 onChange={event => updateField('comentario', event.target.value)}
                 className="border rounded-xl2 px-3 py-3 min-h-[140px]"
                 placeholder="Cuéntanos qué te gustó de la sesión, el trato del equipo y el resultado final."
+                disabled={submitting || !user}
               />
             </label>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <button type="submit" className="btn btn-primary sm:w-auto" disabled={submitting}>
+              <button type="submit" className="btn btn-primary sm:w-auto" disabled={submitting || !user}>
                 {submitting ? 'Enviando reseña…' : 'Enviar reseña'}
               </button>
               <button
@@ -165,6 +288,9 @@ export default function Reviews(){
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {resenas.map(resena => {
               const rating = Number(resena?.calificacion ?? 0)
+              const autor = resena.autor?.username || 'Cliente verificado'
+              const paquete = resena.actividad?.paquete?.nombre_paquete
+              const titulo = resena.actividad?.nombre_actividad || paquete || 'Reserva sin título'
               return (
                 <article key={resena.id} className="card border border-[var(--border)] p-5 space-y-3 bg-white shadow-soft/40">
                   <div className="flex items-center justify-between">
@@ -176,10 +302,19 @@ export default function Reviews(){
                       </div>
                       <span className="text-sm font-semibold text-umber">{rating.toFixed(1)} / 5</span>
                     </div>
+                    <div className="text-xs text-slate-500 text-right leading-tight">
+                      <p className="font-semibold text-slate-600">{autor}</p>
+                      {titulo && <p className="mt-0.5">{titulo}</p>}
+                    </div>
                   </div>
                   <p className="text-sm text-slate-600 whitespace-pre-line">
                     {resena.comentario || 'El cliente no dejó un comentario.'}
                   </p>
+                  {resena.fecha_resena && (
+                    <p className="text-xs text-slate-500">
+                      Publicada el {new Date(resena.fecha_resena).toLocaleDateString('es-GT')}
+                    </p>
+                  )}
                 </article>
               )
             })}

@@ -275,10 +275,10 @@ export default function AdminReservations() {
   }
 
   return (
-    <div className="grid gap-6">
+    <div className="admin-page">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-        <div className="card flex-1 p-5 space-y-4">
-          <header className="flex flex-wrap items-center justify-between gap-3">
+        <div className="admin-section flex-1 space-y-4">
+          <header className="admin-header">
             <div>
               <h1 className="text-xl font-semibold text-umber">Gestión de reservas</h1>
               <p className="muted text-sm">Registra nuevas solicitudes y da seguimiento a las existentes.</p>
@@ -328,7 +328,7 @@ export default function AdminReservations() {
                 {ESTADOS.map(estado => <option key={estado} value={estado}>{formatEstado(estado)}</option>)}
               </select>
             </label>
-            <div className="md:col-span-2 flex items-center gap-3">
+            <div className="md:col-span-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <button className="btn btn-primary" disabled={saving}>{saving ? 'Guardando…' : 'Guardar reserva'}</button>
               {feedback.message && <p className={`text-sm ${feedback.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>{feedback.message}</p>}
             </div>
@@ -344,14 +344,20 @@ export default function AdminReservations() {
         </div>
       </div>
 
-      <div className="card p-5">
-        <h2 className="text-lg font-semibold text-umber mb-3">Reservas registradas</h2>
+      <div className="admin-section">
+        <div className="admin-header">
+          <div>
+            <h2 className="text-lg font-semibold text-umber">Reservas registradas</h2>
+            <p className="muted text-sm">Lista consolidada de actividades con asignación de fotógrafo.</p>
+          </div>
+          <span className="text-xs uppercase tracking-[0.3em] text-slate-500">{reservas.length} registros</span>
+        </div>
         {loading ? (
           <p className="muted text-sm">Cargando reservas…</p>
         ) : reservas.length ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-sand text-left uppercase text-xs tracking-wide text-slate-600">
+          <div className="table-responsive">
+            <table className="table">
+              <thead>
                 <tr>
                   <th className="p-2">Cliente</th>
                   <th className="p-2">Teléfono</th>
@@ -366,7 +372,7 @@ export default function AdminReservations() {
               </thead>
               <tbody>
                 {reservas.map(reserva => (
-                  <tr key={reserva.id} className="border-b last:border-0">
+                  <tr key={reserva.id}>
                     <td className="p-2 font-medium text-slate-700">{reserva.nombre}</td>
                     <td className="p-2">{reserva.telefono}</td>
                     <td className="p-2">{reserva.paquete}</td>
@@ -393,8 +399,11 @@ export default function AdminReservations() {
         )}
       </div>
 
-      <div className="card p-5">
-        <h2 className="text-lg font-semibold text-umber mb-3">Reservas pendientes</h2>
+      <div className="admin-section">
+        <div className="admin-header">
+          <h2 className="text-lg font-semibold text-umber">Reservas pendientes</h2>
+          <span className="text-xs uppercase tracking-[0.3em] text-slate-500">{reservasPendientes.length}</span>
+        </div>
         {reservasPendientes.length ? (
           <ul className="space-y-2 text-sm">
             {reservasPendientes.map(r => (

@@ -202,28 +202,31 @@ export default function AdminDashboard(){
   ]), [stats])
 
   return (
-    <div className="space-y-6">
+    <div className="admin-page">
       {error && <p className="text-red-600 text-sm">{error}</p>}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="admin-columns xl:grid-cols-4">
         {resumen.map(item => (
-          <div key={item.label} className="card p-4">
-            <span className="muted text-xs uppercase tracking-wide">{item.label}</span>
-            <strong className="text-3xl text-umber">{item.value}</strong>
+          <div key={item.label} className="card p-5 space-y-1">
+            <span className="muted text-xs uppercase tracking-[0.3em]">{item.label}</span>
+            <strong className="text-3xl font-semibold text-umber">{item.value}</strong>
           </div>
         ))}
       </div>
 
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-        <div className="card flex-1 space-y-6 p-4">
-          <section>
-            <h3 className="font-semibold mb-2">Reservas recientes</h3>
+        <div className="admin-section flex-1 space-y-6">
+          <section className="space-y-3">
+            <div className="admin-header">
+              <h3 className="font-semibold text-lg text-umber">Reservas recientes</h3>
+              <span className="text-xs uppercase tracking-[0.3em] text-slate-500">Últimas 5 actividades</span>
+            </div>
             {loading ? (
               <p className="muted text-sm">Cargando información…</p>
             ) : reservas.length ? (
-              <div className="overflow-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-sand text-left">
+              <div className="table-responsive">
+                <table className="table">
+                  <thead>
                     <tr>
                       <th className="p-2">Cliente</th>
                       <th className="p-2">Comentarios</th>
@@ -233,15 +236,11 @@ export default function AdminDashboard(){
                   </thead>
                   <tbody>
                     {reservas.map(reserva => (
-                      <tr key={reserva.id} className="border-b last:border-0">
-                        <td className="p-2 font-medium">{reserva.cliente}</td>
+                      <tr key={reserva.id}>
+                        <td className="p-2 font-medium text-slate-700">{reserva.cliente}</td>
                         <td className="p-2">{reserva.comentarios || '—'}</td>
                         <td className="p-2">{formatDate(reserva.fecha)}</td>
-                        <td className="p-2">
-                          <span className="inline-flex items-center rounded-full bg-sand px-2 py-1 text-xs font-semibold uppercase tracking-wide">
-                            {formatEstado(reserva.estado)}
-                          </span>
-                        </td>
+                        <td className="p-2"><span className="badge-soft">{formatEstado(reserva.estado)}</span></td>
                       </tr>
                     ))}
                   </tbody>
@@ -252,14 +251,17 @@ export default function AdminDashboard(){
             )}
           </section>
 
-          <section>
-            <h3 className="font-semibold mb-2">Próximas sesiones</h3>
+          <section className="space-y-3">
+            <div className="admin-header">
+              <h3 className="font-semibold text-lg text-umber">Próximas sesiones</h3>
+              <span className="text-xs uppercase tracking-[0.3em] text-slate-500">Agenda próxima</span>
+            </div>
             {loading ? (
               <p className="muted text-sm">Cargando información…</p>
             ) : proximas.length ? (
-              <div className="overflow-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-sand text-left">
+              <div className="table-responsive">
+                <table className="table">
+                  <thead>
                     <tr>
                       <th className="p-2">Cliente</th>
                       <th className="p-2">Fecha</th>
@@ -269,15 +271,15 @@ export default function AdminDashboard(){
                   </thead>
                   <tbody>
                     {proximas.map(item => (
-                      <tr key={item.id} className="border-b last:border-0">
+                      <tr key={item.id}>
                         <td className="p-2 font-medium text-slate-700">{item.cliente}</td>
                         <td className="p-2">{formatDate(item.fecha)}</td>
+                        <td className="p-2"><span className="badge-soft">{formatEstado(item.estado)}</span></td>
                         <td className="p-2">
-                          <span className="inline-flex items-center rounded-full bg-umber/10 px-3 py-1 text-xs font-semibold uppercase text-umber">
-                            {formatEstado(item.estado)}
+                          <span className={`badge ${item.pago ? 'badge-soft' : 'border-slate-300 text-slate-600 bg-white'}`}>
+                            {item.pago ? 'Pagado' : 'Pendiente'}
                           </span>
                         </td>
-                        <td className="p-2 text-xs text-slate-600">{item.pago ? 'Pagado' : 'Pendiente'}</td>
                       </tr>
                     ))}
                   </tbody>

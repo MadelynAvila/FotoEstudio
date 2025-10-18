@@ -50,6 +50,11 @@ const renderStars = (rating) => {
   return `${'⭐'.repeat(clamped)}${'☆'.repeat(empty)}`
 }
 
+const isPagoCompletado = (estado) => {
+  const normalized = (estado || '').toString().trim().toLowerCase()
+  return ['completada', 'pagado', 'finalizada'].includes(normalized)
+}
+
 export default function MiCuenta () {
   const { user } = useAuth()
   const [reservas, setReservas] = useState([])
@@ -134,7 +139,7 @@ export default function MiCuenta () {
       return
     }
 
-    const pagoCompletado = (actividad?.estado_pago || '').toString().trim().toLowerCase() === 'completada'
+    const pagoCompletado = isPagoCompletado(actividad?.estado_pago)
 
     if (!pagoCompletado) {
       setFeedback({ type: 'error', message: 'Podrás dejar una reseña una vez completado tu pago.' })
@@ -170,7 +175,7 @@ export default function MiCuenta () {
       return
     }
 
-    const pagoCompletado = (actividad?.estado_pago || '').toString().trim().toLowerCase() === 'completada'
+    const pagoCompletado = isPagoCompletado(actividad?.estado_pago)
 
     if (!pagoCompletado) {
       setFeedback({ type: 'error', message: 'Podrás dejar una reseña una vez completado tu pago.' })
@@ -265,7 +270,7 @@ export default function MiCuenta () {
             const paquete = reserva.paquete ?? {}
             const resenas = reserva.resenas ?? []
             const tieneResena = resenas.length > 0
-            const pagoCompletado = (reserva.estado_pago || '').toString().trim().toLowerCase() === 'completada'
+            const pagoCompletado = isPagoCompletado(reserva.estado_pago)
             const puedeResenar = !tieneResena && pagoCompletado
 
             return (
