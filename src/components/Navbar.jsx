@@ -50,7 +50,14 @@ export default function Navbar(){
             )}
             {user && (
               <>
-                <li><NavLink to={isAdminRole(user.role) ? '/admin' : '/'} className="btn btn-primary">{isAdminRole(user.role)?'Administración':'Mi cuenta'}</NavLink></li>
+                <li>
+                  <NavLink
+                    to={isAdminRole(user.role) ? '/admin' : '/mi-cuenta'}
+                    className="btn btn-primary"
+                  >
+                    {isAdminRole(user.role) ? 'Administración' : 'Mi cuenta'}
+                  </NavLink>
+                </li>
                 <li><button className="btn btn-ghost" onClick={logout}>Salir</button></li>
               </>
             )}
