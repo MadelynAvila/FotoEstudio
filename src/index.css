@@ -1,25 +1,124 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Poppins:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root{
-  --border:#E4DDCC;
+@layer base {
+  :root {
+    --border: #e4ddcc;
+    color-scheme: light;
+  }
+
+  body {
+    @apply font-sans bg-sand text-slate-700 antialiased; 
+    background-image: radial-gradient(circle at top, rgba(255, 255, 255, 0.9), rgba(250, 248, 244, 0.8) 45%, rgba(235, 226, 212, 0.4));
+    min-height: 100vh;
+  }
+
+  main {
+    @apply relative;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display text-umber tracking-tight;
+  }
+
+  a {
+    @apply transition-colors duration-200;
+  }
 }
 
-/***** Utilidades inspiradas en el prototipo *****/
-.card{ @apply bg-white border rounded-xl2 shadow-soft border-[color:var(--border)]; }
-.btn{ @apply inline-flex items-center gap-2 font-semibold rounded-xl2 px-4 py-2 border transition; }
-.btn-primary{ @apply bg-umber text-white border-umber hover:brightness-95; }
-.btn-ghost{ @apply bg-white text-umber border-umber hover:bg-sand; }
-.muted{ @apply text-neutral-500; }
-.container-1120{ @apply max-w-[1120px] mx-auto px-6; }
-.admin-page{ @apply space-y-6; }
-.admin-header{ @apply flex flex-col gap-3 md:flex-row md:items-center md:justify-between; }
-.admin-section{ @apply card p-6 space-y-4; }
-.admin-columns{ @apply grid gap-4 md:grid-cols-2 xl:grid-cols-3; }
-.badge{ @apply inline-flex items-center rounded-full border px-2 py-1 text-xs font-semibold uppercase tracking-wide; }
-.badge-soft{ @apply badge border-amber-200 bg-sand text-amber-700; }
-.table-responsive{ @apply overflow-x-auto; }
-.table{ @apply min-w-full text-sm; }
-.table thead{ @apply bg-sand text-left uppercase text-xs tracking-wide text-slate-600; }
-.table tbody tr{ @apply border-b last:border-0; }
+@layer components {
+  .container-1120 {
+    @apply max-w-[1120px] mx-auto px-5 md:px-8;
+  }
+
+  .page-section {
+    @apply py-14 md:py-20;
+  }
+
+  .section-shell {
+    @apply container-1120 grid gap-12 md:gap-16;
+  }
+
+  .section-heading {
+    @apply flex flex-col gap-3 max-w-3xl;
+  }
+
+  .section-eyebrow {
+    @apply uppercase tracking-[0.4em] text-[0.7rem] text-slate-500 font-semibold;
+  }
+
+  .section-subtitle {
+    @apply text-base md:text-lg text-slate-600 leading-relaxed;
+  }
+
+  .card {
+    @apply bg-white border border-[color:var(--border)] rounded-3xl shadow-soft overflow-hidden;
+  }
+
+  .card-body {
+    @apply p-6 md:p-7;
+  }
+
+  .pill {
+    @apply inline-flex items-center gap-2 rounded-full px-4 py-2 border border-[color:var(--border)] bg-white/60 backdrop-blur text-sm font-medium text-slate-600;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 font-semibold rounded-full px-5 py-2.5 border transition-all duration-200 ease-out;
+  }
+
+  .btn-primary {
+    @apply bg-umber text-white border-umber shadow-md shadow-umber/20 hover:shadow-lg hover:-translate-y-0.5;
+  }
+
+  .btn-ghost {
+    @apply bg-transparent border-transparent text-umber hover:bg-white hover:border-[color:var(--border)] hover:shadow-sm;
+  }
+
+  .muted {
+    @apply text-slate-500;
+  }
+
+  .admin-page {
+    @apply space-y-6;
+  }
+
+  .admin-header {
+    @apply flex flex-col gap-3 md:flex-row md:items-center md:justify-between;
+  }
+
+  .admin-section {
+    @apply card p-6 space-y-4;
+  }
+
+  .admin-columns {
+    @apply grid gap-4 md:grid-cols-2 xl:grid-cols-3;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em];
+  }
+
+  .badge-soft {
+    @apply badge border-amber-200 bg-sand text-amber-700;
+  }
+
+  .table-responsive {
+    @apply overflow-x-auto;
+  }
+
+  .table {
+    @apply min-w-full text-sm;
+  }
+
+  .table thead {
+    @apply bg-sand text-left uppercase text-xs tracking-wide text-slate-600;
+  }
+
+  .table tbody tr {
+    @apply border-b last:border-0;
+  }
+}

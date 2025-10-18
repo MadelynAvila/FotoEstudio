@@ -29,22 +29,43 @@ export default function Portfolio(){
   }, [])
 
   return (
-    <div className="container-1120 py-6">
-      <h2 className="text-2xl font-display mb-4">Portafolio</h2>
-      {loading && <p className="muted">Cargando fotografías…</p>}
-      {error && <p className="text-red-600 text-sm">{error}</p>}
-      {!loading && !error && (
-        <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(180px,1fr))]">
-          {fotos.map(f => (
-            <div key={f.id} className="card aspect-square bg-sand flex items-center justify-center overflow-hidden">
-              <img src={f.url_imagen} alt={f.descripcion || f.paquete?.nombre_paquete || 'Fotografía'} className="w-full h-full object-cover"/>
-            </div>
-          ))}
-          {fotos.length === 0 && (
-            <p className="muted col-span-full">Aún no hay fotografías publicadas.</p>
-          )}
+    <section className="page-section">
+      <div className="section-shell">
+        <div className="section-heading">
+          <span className="section-eyebrow">Portafolio</span>
+          <h1 className="text-3xl md:text-4xl">Narrativas visuales que conmueven</h1>
+          <p className="section-subtitle">
+            Una selección de sesiones recientes que combinan composición precisa, luz envolvente y dirección emocional.
+          </p>
         </div>
-      )}
-    </div>
+
+        {loading && <p className="muted">Cargando fotografías…</p>}
+        {error && <p className="text-red-600 text-sm">{error}</p>}
+        {!loading && !error && (
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {fotos.map(f => (
+              <article key={f.id} className="card overflow-hidden group">
+                <div className="aspect-[4/5] bg-sand overflow-hidden">
+                  <img
+                    src={f.url_imagen}
+                    alt={f.descripcion || f.paquete?.nombre_paquete || 'Fotografía'}
+                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  />
+                </div>
+                <div className="px-6 py-4 space-y-1">
+                  <p className="text-sm font-semibold text-umber">{f.paquete?.nombre_paquete || 'Colección personalizada'}</p>
+                  {f.descripcion && (
+                    <p className="text-xs text-slate-500">{f.descripcion}</p>
+                  )}
+                </div>
+              </article>
+            ))}
+            {fotos.length === 0 && (
+              <p className="muted col-span-full">Aún no hay fotografías publicadas.</p>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   )
 }

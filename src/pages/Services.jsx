@@ -62,28 +62,46 @@ export default function Services(){
   }, [])
 
   return (
-    <div className="container-1120 py-6">
-      <h2 className="text-2xl font-display mb-4">Servicios</h2>
-      {loading && <p className="muted">Cargando servicios…</p>}
-      {error && <p className="text-red-600 text-sm">{error}</p>}
-      {!loading && !error && (
-        <div className="grid gap-4 md:grid-cols-3">
-          {servicios.map(s => (
-            <article key={s.id} className="card p-4">
-              <h3 className="font-semibold">{s.nombre}</h3>
-              <p className="muted text-sm">{s.descripcion}</p>
-              {s.precio !== undefined && s.precio !== null && (
-                <span className="text-umber font-semibold block mt-2">
-                  Q{Number(s.precio).toLocaleString('es-GT')}
-                </span>
-              )}
-            </article>
-          ))}
-          {servicios.length === 0 && (
-            <p className="muted col-span-full">Todavía no hay servicios configurados.</p>
-          )}
+    <section className="page-section">
+      <div className="section-shell">
+        <div className="section-heading">
+          <span className="section-eyebrow">Servicios</span>
+          <h1 className="text-3xl md:text-4xl">Especialidades fotográficas</h1>
+          <p className="section-subtitle">
+            Diseñamos sesiones enfocadas en los distintos momentos de tu vida y de tu marca. Encuentra el servicio ideal y personalízalo con nuestros paquetes.
+          </p>
         </div>
-      )}
-    </div>
+
+        {loading && <p className="muted">Cargando servicios…</p>}
+        {error && <p className="text-red-600 text-sm">{error}</p>}
+        {!loading && !error && (
+          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {servicios.map(s => (
+              <article key={s.id} className="card h-full">
+                <div className="card-body space-y-4">
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-semibold text-umber">{s.nombre}</h3>
+                    <p className="text-sm leading-relaxed text-slate-600">
+                      {s.descripcion || 'Próximamente agregaremos más detalles sobre este servicio.'}
+                    </p>
+                  </div>
+                  {s.precio !== undefined && s.precio !== null && (
+                    <p className="text-sm uppercase tracking-[0.3em] text-slate-500">
+                      Desde <span className="block text-2xl font-display text-umber tracking-normal">Q{Number(s.precio).toLocaleString('es-GT')}</span>
+                    </p>
+                  )}
+                  <a className="text-sm font-semibold text-umber hover:underline" href="/paquetes">
+                    Explorar paquetes relacionados
+                  </a>
+                </div>
+              </article>
+            ))}
+            {servicios.length === 0 && (
+              <p className="muted col-span-full">Todavía no hay servicios configurados.</p>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   )
 }

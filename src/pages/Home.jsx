@@ -1,25 +1,92 @@
 import GalleryRail from '../components/GalleryRail'
 
+const highlights = [
+  {
+    title: 'Dirección artística integral',
+    description: 'Curamos cada detalle de iluminación, vestuario y actitud para proyectar tu esencia con elegancia y confianza.',
+  },
+  {
+    title: 'Experiencias personalizadas',
+    description: 'Creamos ambientes a medida, guiando cada pose y emoción para lograr fotografías naturales y memorables.',
+  },
+  {
+    title: 'Entrega profesional',
+    description: 'Postproducción cuidada, galerías privadas y formatos listos para impresión o difusión digital.',
+  },
+]
+
+const stats = [
+  { label: 'Sesiones realizadas', value: '250+' },
+  { label: 'Clientes felices', value: '98%' },
+]
+
 export default function Home(){
   return (
-    <section id="inicio">
-      {/* Hero */}
-      <div className="py-6">
-        <div className="container-1120 grid md:grid-cols-[1.2fr,1fr] gap-8 items-start">
-          <div>
-            <div className="uppercase tracking-[.2em] muted">Aguín Fotografía</div>
-            <h1 className="text-4xl font-display">Fotografía de estudio</h1>
-            <p className="muted max-w-xl">Creatividad + técnica para que tu historia se vea auténtica.</p>
-            <a className="btn btn-primary mt-3" href="/reservar">Reservar ahora</a>
+    <div className="space-y-24">
+      <section id="inicio" className="page-section pt-8">
+        <div className="container-1120 grid gap-12 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] items-center">
+          <div className="space-y-7">
+            <span className="section-eyebrow">Aguín Fotografía</span>
+            <h1 className="text-4xl md:text-6xl leading-tight">
+              Historias visuales que honran tu esencia
+            </h1>
+            <p className="section-subtitle max-w-xl">
+              Sesiones fotográficas con dirección artística, luz cálida y estilo editorial para retratar momentos que trascienden.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <a className="btn btn-primary" href="/reservar">Reservar sesión</a>
+              <a className="btn btn-ghost border border-[color:var(--border)]" href="/portafolio">Ver portafolio</a>
+            </div>
+            <dl className="grid grid-cols-2 gap-5 max-w-md">
+              {stats.map(item => (
+                <div key={item.label} className="card p-5 bg-white/80 backdrop-blur">
+                  <dt className="text-xs uppercase tracking-[0.3em] text-slate-500">{item.label}</dt>
+                  <dd className="text-2xl font-display text-umber">{item.value}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
-          <figure className="rounded-xl2 overflow-hidden shadow-soft min-h-[320px]">
-            <img className="w-full h-full object-cover grayscale" src="https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1000&auto=format&fit=crop"/>
-          </figure>
+          <div className="relative">
+            <figure className="relative overflow-hidden rounded-[2.75rem] border border-[color:var(--border)] shadow-soft aspect-[4/5] md:aspect-[5/6]">
+              <img src="/img/hero-texture.svg" alt="Fondo artístico" className="absolute inset-0 h-full w-full object-cover" />
+              <img
+                src="https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1200&auto=format&fit=crop"
+                alt="Sesión fotográfica en estudio"
+                className="absolute inset-0 h-full w-full object-cover mix-blend-multiply opacity-80"
+              />
+              <div className="absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-[#443A35]/75"></div>
+              <figcaption className="relative h-full p-8 flex flex-col justify-end text-white gap-3">
+                <span className="text-xs uppercase tracking-[0.4em] text-amber-200/80">Retratos editoriales</span>
+                <p className="text-2xl font-display leading-snug">Iluminación sofisticada y edición fina para resultados de impacto.</p>
+              </figcaption>
+            </figure>
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Galería bajo el héroe */}
+      <section className="page-section pt-0">
+        <div className="section-shell">
+          <div className="section-heading">
+            <span className="section-eyebrow">Experiencia Aguín</span>
+            <h2 className="text-3xl md:text-4xl">Una atmósfera creada para inspirarte</h2>
+            <p className="section-subtitle">
+              Desde la preproducción hasta la entrega final, te acompañamos con un proceso cuidado, transparente y lleno de inspiración.
+            </p>
+          </div>
+          <div className="grid gap-6 md:grid-cols-3">
+            {highlights.map(item => (
+              <article key={item.title} className="card">
+                <div className="card-body space-y-3">
+                  <h3 className="text-xl font-semibold text-umber">{item.title}</h3>
+                  <p className="text-sm leading-relaxed text-slate-600">{item.description}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <GalleryRail />
-    </section>
+    </div>
   )
 }
