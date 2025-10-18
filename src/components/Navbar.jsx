@@ -24,7 +24,6 @@ export default function Navbar(){
     { to:'/portafolio', label:'Portafolio' },
     { to:'/servicios', label:'Servicios' },
     { to:'/paquetes', label:'Paquetes' },
-    { to:'/resenas', label:'Reseñas' },
     { to:'/reservar', label:'Reservar' },
   ]
 

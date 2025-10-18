@@ -18,19 +18,21 @@ const normalizeSingle = (value) => {
 
 const parseDate = (dateString) => {
   if (!dateString) return null
-  const date = new Date(`${dateString}T00:00:00`)
+  const value = typeof dateString === 'string' && dateString.includes('T')
+    ? dateString
+    : `${dateString}T00:00:00`
+  const date = new Date(value)
   if (Number.isNaN(date.getTime())) return null
   return date
 }
 
-const formatDate = (dateString) => {
+const formatDate = (dateString, variant = 'long') => {
   const date = parseDate(dateString)
   if (!date) return 'Fecha por definir'
-  return new Intl.DateTimeFormat('es-ES', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric'
-  }).format(date)
+  const options = variant === 'short'
+    ? { day: '2-digit', month: '2-digit', year: 'numeric' }
+    : { day: '2-digit', month: 'long', year: 'numeric' }
+  return new Intl.DateTimeFormat('es-ES', options).format(date)
 }
 
 const formatHour = (timeString) => {
@@ -40,18 +42,34 @@ const formatHour = (timeString) => {
   return `${hours.padStart(2, '0')}:${(minutes ?? '00').padStart(2, '0')}`
 }
 
-const hasSessionPassed = (fecha) => {
-  const sessionDate = parseDate(fecha)
-  if (!sessionDate) return false
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return sessionDate < today
+const buildDateTime = (fecha, hora) => {
+  if (!fecha) return null
+  const normalizedDate = typeof fecha === 'string' && fecha.includes('T')
+    ? fecha.split('T')[0]
+    : fecha
+  const normalizedTime = (hora ?? '').trim()
+  const [hours = '00', minutes = '00', seconds = '00'] = normalizedTime.split(':')
+  const hoursSafe = hours.padStart(2, '0')
+  const minutesSafe = minutes.padStart(2, '0')
+  const secondsSafe = seconds.padStart(2, '0')
+  const composed = `${normalizedDate}T${hoursSafe}:${minutesSafe}:${secondsSafe}`
+  const date = new Date(composed)
+  if (Number.isNaN(date.getTime())) return null
+  return date
+}
+
+const hasSessionFinished = (fecha, horafin) => {
+  const sessionEnd = buildDateTime(fecha, horafin)
+  if (!sessionEnd) return false
+  return sessionEnd.getTime() <= Date.now()
 }
 
 const renderStars = (rating) => {
   const stars = Math.round(Number(rating) || 0)
   if (stars <= 0) return '—'
-  return '⭐'.repeat(Math.min(stars, 5))
+  const clamped = Math.min(Math.max(stars, 0), 5)
+  const empty = Math.max(5 - clamped, 0)
+  return `${'⭐'.repeat(clamped)}${'☆'.repeat(empty)}`
 }
 
 export default function MiCuenta () {
@@ -75,6 +93,7 @@ export default function MiCuenta () {
         estado_pago,
         paquete:paquete(nombre_paquete, precio),
         agenda:agenda(
+          id,
           fecha,
           horainicio,
           horafin,
@@ -84,11 +103,13 @@ export default function MiCuenta () {
           id,
           calificacion,
           comentario,
-          fecha_resena
+          fecha_resena,
+          idusuario
         )
       `)
       .eq('idusuario', user.id)
-      .order('id', { ascending: false })
+      .order('fecha', { foreignTable: 'agenda', ascending: false, nullsLast: true })
+      .order('horafin', { foreignTable: 'agenda', ascending: false, nullsLast: true })
 
     if (error) {
       console.error('No se pudieron cargar las reservas del usuario', error)
@@ -110,7 +131,9 @@ export default function MiCuenta () {
     agenda: normalizeSingle(reserva.agenda),
     paquete: normalizeSingle(reserva.paquete),
     resenas: ensureArray(reserva.resenas)
-  })), [reservas])
+      .filter((resena) => resena?.idusuario === user?.id)
+      .map(({ idusuario, ...rest }) => rest)
+  })), [reservas, user?.id])
 
   const handleStartReview = (actividadId) => {
     const actividad = reservasConAgenda.find((reserva) => reserva.id === actividadId)
@@ -122,7 +145,7 @@ export default function MiCuenta () {
       return
     }
 
-    if (!hasSessionPassed(agenda?.fecha)) {
+    if (!hasSessionFinished(agenda?.fecha, agenda?.horafin)) {
       setFeedback({ type: 'error', message: 'Podrás dejar una reseña una vez finalizada tu sesión.' })
       return
     }
@@ -156,7 +179,7 @@ export default function MiCuenta () {
       return
     }
 
-    if (!hasSessionPassed(agenda?.fecha)) {
+    if (!hasSessionFinished(agenda?.fecha, agenda?.horafin)) {
       setFeedback({ type: 'error', message: 'Podrás dejar una reseña una vez finalizada tu sesión.' })
       handleCancelReview()
       return
@@ -175,27 +198,50 @@ export default function MiCuenta () {
     }
 
     setSubmitting(true)
-    const { error } = await supabase
-      .from('resena')
-      .insert([
-        {
-          idusuario: user.id,
-          idactividad: actividad.id,
-          calificacion,
-          comentario
-        }
-      ])
 
-    if (error) {
-      console.error('No se pudo guardar la reseña del usuario', error)
-      setFeedback({ type: 'error', message: 'No pudimos registrar tu reseña. Intenta nuevamente en unos minutos.' })
-    } else {
-      setFeedback({ type: 'success', message: '¡Gracias por calificar el servicio!' })
+    try {
+      const { data: existingReview, error: existingReviewError } = await supabase
+        .from('resena')
+        .select('id')
+        .eq('idusuario', user.id)
+        .eq('idactividad', actividad.id)
+        .maybeSingle()
+
+      if (existingReviewError) {
+        throw existingReviewError
+      }
+
+      if (existingReview) {
+        setFeedback({ type: 'error', message: 'Ya calificaste este servicio.' })
+        handleCancelReview()
+        fetchReservas()
+        return
+      }
+
+      const { error } = await supabase
+        .from('resena')
+        .insert([
+          {
+            idusuario: user.id,
+            idactividad: actividad.id,
+            calificacion,
+            comentario
+          }
+        ])
+
+      if (error) {
+        throw error
+      }
+
+      setFeedback({ type: 'success', message: 'Gracias por compartir tu experiencia. Tu reseña ha sido registrada correctamente.' })
       handleCancelReview()
       fetchReservas()
+    } catch (error) {
+      console.error('No se pudo guardar la reseña del usuario', error)
+      setFeedback({ type: 'error', message: 'No pudimos registrar tu reseña. Intenta nuevamente en unos minutos.' })
+    } finally {
+      setSubmitting(false)
     }
-
-    setSubmitting(false)
   }
 
   return (
@@ -225,12 +271,13 @@ export default function MiCuenta () {
             const paquete = reserva.paquete ?? {}
             const resenas = reserva.resenas ?? []
             const tieneResena = resenas.length > 0
-            const puedeResenar = !tieneResena && hasSessionPassed(agenda?.fecha)
+            const puedeResenar = !tieneResena && hasSessionFinished(agenda?.fecha, agenda?.horafin)
 
             return (
               <article key={reserva.id} className="card p-6 space-y-4">
                 <div className="flex flex-col gap-1">
-                  <h2 className="text-xl font-semibold">{reserva.nombre_actividad || 'Reserva sin título'}</h2>
+                  <h2 className="text-xl font-semibold">{paquete?.nombre_paquete || 'Paquete por definir'}</h2>
+                  <p className="text-sm text-slate-600">{reserva.nombre_actividad || 'Actividad sin título'}</p>
                   <p className="muted text-sm">ID de reserva: {reserva.id}</p>
                 </div>
 
@@ -246,6 +293,10 @@ export default function MiCuenta () {
                   <div>
                     <dt className="muted uppercase tracking-[.2em] text-xs">👤 Fotógrafo</dt>
                     <dd className="font-medium">{agenda?.fotografo?.username || 'Por asignar'}</dd>
+                  </div>
+                  <div>
+                    <dt className="muted uppercase tracking-[.2em] text-xs">🎬 Actividad</dt>
+                    <dd className="font-medium">{reserva.nombre_actividad || 'Actividad sin título'}</dd>
                   </div>
                   <div>
                     <dt className="muted uppercase tracking-[.2em] text-xs">🎁 Paquete</dt>
@@ -276,7 +327,7 @@ export default function MiCuenta () {
                         </div>
                         <p className="text-sm text-slate-700 whitespace-pre-line">{resena.comentario}</p>
                         {resena.fecha_resena && (
-                          <p className="text-xs text-slate-500">Reseña enviada el {formatDate(resena.fecha_resena)}</p>
+                          <p className="text-xs text-slate-500">Publicado el {formatDate(resena.fecha_resena, 'short')}</p>
                         )}
                       </div>
                     ))
@@ -320,7 +371,7 @@ export default function MiCuenta () {
                           </form>
                         ) : (
                           <button type="button" className="btn btn-primary" onClick={() => handleStartReview(reserva.id)}>
-                            Agregar reseña
+                            Califícanos
                           </button>
                         )
                       ) : (
