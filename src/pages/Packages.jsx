@@ -1,19 +1,28 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 
 export default function Packages(){
   const [paquetes, setPaquetes] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [searchParams] = useSearchParams()
+  const evento = searchParams.get('evento')
 
   useEffect(() => {
     let active = true
     const fetchData = async () => {
       setLoading(true)
       setError('')
-      const { data, error: fetchError } = await supabase
+      let query = supabase
         .from('paquete')
         .select('id, nombre_paquete, descripcion, precio, incluye, tipo_evento:tipo_evento ( nombre_evento )')
+
+      if (evento) {
+        query = query.eq('id_tipo_evento', evento)
+      }
+
+      const { data, error: fetchError } = await query
       if (!active) return
       if (fetchError) {
         console.error('No se pudieron cargar los paquetes', fetchError)
@@ -26,14 +35,16 @@ export default function Packages(){
     }
     fetchData()
     return () => { active = false }
-  }, [])
+  }, [evento])
 
   return (
     <section className="page-section">
       <div className="section-shell">
         <div className="section-heading">
           <span className="section-eyebrow">Paquetes</span>
-          <h1 className="text-3xl md:text-4xl">Colecciones pensadas para cada momento</h1>
+          <h1 className="text-3xl md:text-4xl">
+            {evento ? 'Paquetes filtrados por servicio' : 'Todos los paquetes'}
+          </h1>
           <p className="section-subtitle">
             Ajusta la duración, cantidad de fotografías y servicios adicionales según la experiencia que quieras vivir.
           </p>
