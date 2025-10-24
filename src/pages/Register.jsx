@@ -75,8 +75,8 @@ export default function Register() {
   };
 
   return (
-    <div className="relative min-h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-black">
-      <div className="absolute inset-0 opacity-40 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-amber-500/30 via-transparent to-transparent" />
+    <div className="relative min-h-screen bg-gradient-to-br from-amber-50 via-amber-100 to-white">
+      <div className="absolute inset-0 opacity-40 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-amber-200/30 via-transparent to-transparent" />
       <div className="relative z-10 flex min-h-screen items-center justify-center px-4 py-20">
         <form onSubmit={onSubmit} className="card w-full max-w-2xl space-y-6 p-10 shadow-2xl shadow-black/15">
           <div className="space-y-2 text-center">
