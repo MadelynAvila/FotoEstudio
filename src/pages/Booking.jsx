@@ -91,7 +91,14 @@ export default function Booking() {
     const loadPaquetes = async () => {
       const { data, error: paquetesError } = await supabase
         .from('paquete')
-        .select('id, nombre_paquete, precio')
+        .select(
+          `
+            id,
+            nombre_paquete,
+            precio,
+            tipo_evento(nombre_evento)
+          `
+        )
         .order('nombre_paquete', { ascending: true })
       if (paquetesError) console.error('No se pudieron cargar los paquetes', paquetesError)
       else setPaquetes(data ?? [])
@@ -553,11 +560,18 @@ export default function Booking() {
               disabled={!user || enviando}
             >
               <option value="">Selecciona un paquete</option>
-              {paquetes.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.nombre_paquete} {p.precio != null ? `- Q${Number(p.precio).toLocaleString('es-GT')}` : ''}
-                </option>
-              ))}
+              {paquetes.map(p => {
+                const precioFormateado =
+                  p.precio != null ? `Q${Number(p.precio).toLocaleString('es-GT')}` : ''
+                const nombreEvento = p.tipo_evento?.nombre_evento
+                return (
+                  <option key={p.id} value={p.id}>
+                    {nombreEvento ? `${nombreEvento} – ` : ''}
+                    {p.nombre_paquete}
+                    {precioFormateado ? ` – ${precioFormateado}` : ''}
+                  </option>
+                )
+              })}
             </select>
 
             <div className="grid gap-4 md:grid-cols-2">
