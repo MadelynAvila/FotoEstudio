@@ -90,7 +90,10 @@ export default function Services(){
                       Desde <span className="block text-2xl font-display text-umber tracking-normal">Q{Number(s.precio).toLocaleString('es-GT')}</span>
                     </p>
                   )}
-                  <a className="text-sm font-semibold text-umber hover:underline" href="/paquetes">
+                  <a
+                    className="text-sm font-semibold text-umber hover:underline"
+                    href={`/paquetes?evento=${s.id}`}
+                  >
                     Explorar paquetes relacionados
                   </a>
                 </div>
