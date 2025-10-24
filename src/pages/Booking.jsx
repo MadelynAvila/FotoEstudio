@@ -86,6 +86,22 @@ export default function Booking() {
 
   const fotografosList = useMemo(() => (Array.isArray(fotografos) ? fotografos : []), [fotografos])
 
+  useEffect(() => {
+    try {
+      const paqueteGuardadoRaw = localStorage.getItem('paqueteSeleccionado')
+      if (!paqueteGuardadoRaw) return
+      const paqueteGuardado = JSON.parse(paqueteGuardadoRaw)
+      if (paqueteGuardado?.id != null && paqueteGuardado.id !== '') {
+        setForm(prev => ({
+          ...prev,
+          paqueteId: String(paqueteGuardado.id)
+        }))
+      }
+    } catch (storageError) {
+      console.error('No se pudo recuperar el paquete seleccionado', storageError)
+    }
+  }, [])
+
   /** Cargar paquetes */
   useEffect(() => {
     const loadPaquetes = async () => {
