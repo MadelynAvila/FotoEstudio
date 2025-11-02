@@ -121,4 +121,50 @@
   .table tbody tr {
     @apply border-b last:border-0;
   }
+
+  .booking-datepicker,
+  .booking-datepicker-popper .react-datepicker {
+    @apply border border-[color:var(--border)] rounded-3xl bg-white shadow-xl shadow-slate-200/70 p-4;
+  }
+
+  .booking-datepicker .react-datepicker__header,
+  .booking-datepicker-popper .react-datepicker__header {
+    @apply bg-transparent border-0 pb-2;
+  }
+
+  .booking-datepicker .react-datepicker__current-month,
+  .booking-datepicker-popper .react-datepicker__current-month {
+    @apply text-base font-semibold text-umber;
+  }
+
+  .booking-datepicker .react-datepicker__day-name,
+  .booking-datepicker-popper .react-datepicker__day-name {
+    @apply text-xs font-medium text-slate-500;
+  }
+
+  .booking-datepicker .react-datepicker__day,
+  .booking-datepicker-popper .react-datepicker__day {
+    @apply text-sm font-medium text-slate-600 transition-colors duration-150;
+  }
+
+  .react-datepicker__day.rsv-day-available:not(.react-datepicker__day--disabled) {
+    @apply bg-emerald-100 text-emerald-700 rounded-full;
+  }
+
+  .react-datepicker__day.rsv-day-partial:not(.react-datepicker__day--disabled) {
+    @apply bg-amber-100 text-amber-700 rounded-full;
+  }
+
+  .react-datepicker__day.rsv-day-full,
+  .react-datepicker__day.rsv-day-full.react-datepicker__day--disabled {
+    @apply bg-slate-200 text-slate-400 rounded-full;
+  }
+
+  .react-datepicker__day--disabled {
+    @apply text-slate-300;
+  }
+
+  .booking-datepicker-popper .react-datepicker__triangle {
+    @apply hidden;
+  }
 }
