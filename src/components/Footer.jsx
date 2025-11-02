@@ -20,7 +20,7 @@ export default function Footer(){
 
   return (
     <footer
-      className="mt-24 text-[#f5eee4]"
+      className="mt-8 text-[#f5eee4]"
       style={{
         backgroundImage: "url('/img/footer-texture.svg')",
         backgroundSize: 'cover',
@@ -29,7 +29,7 @@ export default function Footer(){
       }}
     >
       <div className="bg-[#1f1814]/90">
-        <div className="container-1120 flex flex-col gap-12 py-16 md:flex-row md:justify-between">
+        <div className="container-1120 flex flex-col gap-8 py-8 md:flex-row md:justify-between">
           <div className="max-w-xl space-y-6">
             <div className="flex items-center gap-3">
               <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#f8efe2]/10 ring-1 ring-white/10">

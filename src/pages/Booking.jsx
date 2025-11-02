@@ -909,14 +909,14 @@ export default function Booking() {
         ? 'border-red-300 bg-red-50/80 text-red-700'
         : 'border-[color:var(--border)] bg-white/70 text-slate-600'
 
-  const inputClass = 'w-full rounded-2xl border border-[color:var(--border)] bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-umber/30 transition disabled:opacity-50 disabled:cursor-not-allowed'
+  const inputClass = 'w-full rounded-lg border border-[color:var(--border)] bg-white px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-umber/30 transition disabled:opacity-50 disabled:cursor-not-allowed'
 
   return (
     <section className="page-section">
       <div className="section-shell">
         <div className="section-heading max-w-2xl">
           <span className="section-eyebrow">Reservas</span>
-          <h1 className="text-3xl md:text-4xl">Agenda tu experiencia fotográfica</h1>
+          <h1 className="leading-snug">Agenda tu experiencia fotográfica</h1>
           <p className="section-subtitle">
             Elige el paquete ideal, indica tu disponibilidad y nosotros nos encargamos del resto. Nuestro equipo confirmará tu fecha cuanto antes.
           </p>
@@ -1018,7 +1018,7 @@ export default function Booking() {
                   )}
                 </div>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2 booking-time-grid">
+              <div className="hora-selector sm:grid sm:grid-cols-2 sm:gap-5">
                 <TimeWheelPicker
                   id="booking-start-time"
                   label="Hora de inicio"

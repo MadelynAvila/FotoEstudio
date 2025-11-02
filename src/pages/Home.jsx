@@ -17,12 +17,12 @@ const highlights = [
 
 export default function Home(){
   return (
-    <div className="space-y-24">
+    <div className="space-y-8">
       <section id="inicio" className="page-section pt-8">
-        <div className="container-1120 grid gap-12 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] items-center">
-          <div className="space-y-7">
+        <div className="container-1120 grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] items-center">
+          <div className="space-y-4">
             <span className="section-eyebrow">Aguín Fotografía</span>
-            <h1 className="text-4xl md:text-6xl leading-tight">
+            <h1 className="leading-tight">
               Historias visuales que honran tu esencia
             </h1>
             <p className="section-subtitle max-w-xl">
@@ -55,7 +55,7 @@ export default function Home(){
         <div className="section-shell">
           <div className="section-heading">
             <span className="section-eyebrow">Experiencia Aguín</span>
-            <h2 className="text-3xl md:text-4xl">Una atmósfera creada para inspirarte</h2>
+            <h2 className="leading-snug">Una atmósfera creada para inspirarte</h2>
             <p className="section-subtitle">
               Desde la preproducción hasta la entrega final, te acompañamos con un proceso cuidado, transparente y lleno de inspiración.
             </p>

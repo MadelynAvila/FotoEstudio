@@ -33,7 +33,7 @@ export default function Portfolio(){
       <div className="section-shell">
         <div className="section-heading">
           <span className="section-eyebrow">Portafolio</span>
-          <h1 className="text-3xl md:text-4xl">Narrativas visuales que conmueven</h1>
+          <h1 className="leading-snug">Narrativas visuales que conmueven</h1>
           <p className="section-subtitle">
             Una selección de sesiones recientes que combinan composición precisa, luz envolvente y dirección emocional.
           </p>

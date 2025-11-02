@@ -7,7 +7,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        umber: '#443A35',
+        umber: '#3b302a',
         dune: '#E4DDCC',
         sand: '#faf8f4',
       },
@@ -15,7 +15,7 @@ export default {
         soft: '0 8px 24px rgba(0,0,0,.06)'
       },
       borderRadius: {
-        xl2: '16px'
+        xl2: '0.5rem'
       },
       fontFamily: {
         display: ['Playfair Display', 'serif'],

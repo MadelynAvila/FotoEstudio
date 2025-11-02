@@ -171,7 +171,7 @@ export default function Reviews(){
         <div className="card p-6 space-y-5">
           <header className="space-y-1">
             <p className="uppercase tracking-[.2em] text-xs text-umber">Comparte tu historia</p>
-            <h1 className="text-3xl font-display">Reseñas de Aguín Fotografía</h1>
+            <h1 className="font-display leading-snug">Reseñas de Aguín Fotografía</h1>
             <p className="muted max-w-2xl text-sm md:text-base">
               Nos encanta saber cómo nuestras sesiones fotográficas te hicieron sentir. Completa el formulario y comparte
               tu experiencia para ayudar a otros clientes a elegir con confianza.

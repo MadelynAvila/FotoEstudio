@@ -247,7 +247,7 @@ export default function MiCuenta () {
     <div className="container-1120 py-8 space-y-8">
       <header className="space-y-2">
         <p className="uppercase tracking-[.2em] text-xs text-umber">Mi cuenta</p>
-        <h1 className="text-3xl font-display">Mis reservas</h1>
+        <h1 className="font-display leading-snug">Mis reservas</h1>
         <p className="muted text-sm md:text-base max-w-2xl">
           Consulta el estado de tus reservas, detalles de tus sesiones y comparte tu experiencia después de cada sesión.
         </p>
