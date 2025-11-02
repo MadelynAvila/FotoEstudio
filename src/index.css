@@ -167,4 +167,83 @@
   .booking-datepicker-popper .react-datepicker__triangle {
     @apply hidden;
   }
+
+  .time-wheel-wrapper {
+    @apply flex flex-col gap-2;
+  }
+
+  .time-wheel-label {
+    @apply text-xs font-semibold uppercase tracking-wide text-slate-500;
+  }
+
+  .time-wheel-shell {
+    @apply relative overflow-hidden rounded-2xl border border-[color:var(--border)] bg-white shadow-inner;
+  }
+
+  .time-wheel-shell:focus-within {
+    @apply ring-2 ring-umber/30;
+  }
+
+  .time-wheel-disabled {
+    @apply opacity-60 pointer-events-none;
+  }
+
+  .time-wheel {
+    @apply relative max-h-56 overflow-y-auto scroll-smooth;
+    scroll-snap-type: y mandatory;
+  }
+
+  .time-wheel::-webkit-scrollbar {
+    display: none;
+  }
+
+  .time-wheel {
+    scrollbar-width: none;
+  }
+
+  .time-wheel-items {
+    @apply relative flex flex-col gap-1 py-6;
+  }
+
+  .time-wheel-option {
+    @apply relative mx-3 flex items-center justify-between rounded-xl px-4 py-3 text-base font-medium text-slate-600 transition-colors duration-150 focus:outline-none;
+    scroll-snap-align: center;
+  }
+
+  .time-wheel-option:hover {
+    @apply bg-slate-100;
+  }
+
+  .time-wheel-option-active {
+    @apply bg-umber/10 text-umber font-semibold shadow-sm;
+  }
+
+  .time-wheel-option-label {
+    @apply text-lg;
+  }
+
+  .time-wheel-indicator {
+    @apply pointer-events-none absolute left-2 right-2 rounded-xl border border-umber/30 shadow-sm;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 3rem;
+  }
+
+  .time-wheel-gradient {
+    @apply pointer-events-none absolute left-0 right-0 h-12 bg-gradient-to-b from-white via-white/40 to-transparent;
+    z-index: 10;
+  }
+
+  .time-wheel-gradient-top {
+    top: 0;
+  }
+
+  .time-wheel-gradient-bottom {
+    @apply rotate-180;
+    bottom: 0;
+  }
+
+  .time-wheel-empty {
+    @apply flex h-32 items-center justify-center px-6 py-4 text-sm text-slate-500;
+  }
 }

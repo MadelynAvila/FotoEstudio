@@ -6,6 +6,7 @@ import esLocale from 'date-fns/locale/es'
 import 'react-datepicker/dist/react-datepicker.css'
 import { useAuth } from '../auth/authContext'
 import { supabase } from '../lib/supabaseClient'
+import TimeWheelPicker from '../components/TimeWheelPicker'
 
 registerLocale('es', esLocale)
 dayjs.locale('es')
@@ -43,6 +44,17 @@ const minutosAFormato = (totalMinutos) => {
   const horas = Math.floor(totalMinutos / 60)
   const minutos = totalMinutos % 60
   return `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}`
+}
+
+const formatearHoraAMPM = (valor) => {
+  if (!valor) return ''
+  const [horasStr, minutosStr] = valor.split(':')
+  const horas = Number(horasStr)
+  const minutos = Number(minutosStr)
+  if (Number.isNaN(horas) || Number.isNaN(minutos)) return valor
+  const periodo = horas >= 12 ? 'PM' : 'AM'
+  const horas12 = horas % 12 === 0 ? 12 : horas % 12
+  return `${horas12}:${String(minutos).padStart(2, '0')} ${periodo}`
 }
 
 const restarIntervalo = (intervalos, intervaloOcupado) => {
@@ -992,7 +1004,8 @@ export default function Booking() {
                       <ul className="mt-2 space-y-1">
                         {availableBlocks.map(bloque => (
                           <li key={`${bloque.inicio}-${bloque.fin}`}>
-                            {minutosAFormato(bloque.inicio)} – {minutosAFormato(bloque.fin)}
+                            {formatearHoraAMPM(minutosAFormato(bloque.inicio))} –{' '}
+                            {formatearHoraAMPM(minutosAFormato(bloque.fin))}
                           </li>
                         ))}
                       </ul>
@@ -1006,33 +1019,35 @@ export default function Booking() {
                 </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
-                <select
+                <TimeWheelPicker
+                  id="booking-start-time"
+                  label="Hora de inicio"
                   value={form.horaInicio}
-                  onChange={e => updateField('horaInicio', e.target.value)}
-                  className={inputClass}
+                  options={startOptions}
+                  onChange={valor => updateField('horaInicio', valor)}
                   disabled={!user || enviando || !startOptions.length}
-                >
-                  <option value="">Hora de inicio</option>
-                  {startOptions.map(opcion => (
-                    <option key={opcion} value={opcion}>
-                      {opcion}
-                    </option>
-                  ))}
-                </select>
-                <select
+                  placeholder={!selectedDate ? 'Selecciona un día para ver horarios' : 'No hay horas disponibles'}
+                />
+                <TimeWheelPicker
+                  id="booking-end-time"
+                  label="Hora de fin"
                   value={form.horaFin}
-                  onChange={e => updateField('horaFin', e.target.value)}
-                  className={inputClass}
+                  options={endOptions}
+                  onChange={valor => updateField('horaFin', valor)}
                   disabled={!user || enviando || !endOptions.length}
-                >
-                  <option value="">Hora de fin</option>
-                  {endOptions.map(opcion => (
-                    <option key={opcion} value={opcion}>
-                      {opcion}
-                    </option>
-                  ))}
-                </select>
+                  placeholder={
+                    !form.horaInicio
+                      ? 'Selecciona una hora de inicio'
+                      : 'Selecciona una hora válida'
+                  }
+                />
               </div>
+              {form.horaInicio && !endOptions.length && (
+                <p className="text-xs text-red-600">
+                  La hora seleccionada solo cuenta con bloques ocupados después de las{' '}
+                  {formatearHoraAMPM(form.horaInicio)}. Elige otro horario disponible.
+                </p>
+              )}
             </div>
 
             <input
