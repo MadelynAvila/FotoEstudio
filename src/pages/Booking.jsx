@@ -1018,7 +1018,7 @@ export default function Booking() {
                   )}
                 </div>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-2 booking-time-grid">
                 <TimeWheelPicker
                   id="booking-start-time"
                   label="Hora de inicio"

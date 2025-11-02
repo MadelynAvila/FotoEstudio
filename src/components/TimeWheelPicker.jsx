@@ -25,6 +25,7 @@ export default function TimeWheelPicker({
   const listRef = useRef(null)
   const optionRefs = useRef([])
   const scrollTimeoutRef = useRef(null)
+  const labelId = id ? `${id}-label` : undefined
 
   const normalizados = useMemo(() => {
     if (!Array.isArray(options)) return []
@@ -134,9 +135,9 @@ export default function TimeWheelPicker({
   return (
     <div className="time-wheel-wrapper">
       {label && (
-        <label htmlFor={id} className="time-wheel-label">
+        <span className="time-wheel-label" id={labelId}>
           {label}
-        </label>
+        </span>
       )}
       <div className={`time-wheel-shell ${disabled ? 'time-wheel-disabled' : ''}`}>
         {normalizados.length === 0 ? (
@@ -150,10 +151,12 @@ export default function TimeWheelPicker({
             <div className="time-wheel-indicator" aria-hidden="true" />
             <div
               role="listbox"
-              aria-label={label || 'Selector de hora'}
+              aria-label={label ? undefined : 'Selector de hora'}
+              aria-labelledby={label ? labelId : undefined}
               tabIndex={disabled ? -1 : 0}
               onKeyDown={manejarKeyDown}
               className="time-wheel-items focus:outline-none"
+              id={id}
             >
               {normalizados.map((opcion, indice) => {
                 const seleccionado = opcion.value === valorSeleccionado
@@ -174,6 +177,12 @@ export default function TimeWheelPicker({
                     }}
                   >
                     <span className="time-wheel-option-label">{opcion.label}</span>
+                    <span
+                      aria-hidden="true"
+                      className={`time-wheel-option-check ${seleccionado ? 'time-wheel-option-check-visible' : ''}`}
+                    >
+                      ✓
+                    </span>
                   </button>
                 )
               })}
