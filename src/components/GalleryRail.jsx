@@ -73,7 +73,7 @@ export default function GalleryRail() {
       <div className="section-shell">
         <div className="section-heading text-center mx-auto">
           <span className="section-eyebrow mx-auto">Portafolio en movimiento</span>
-          <h2 className="text-3xl md:text-4xl">Una pincelada de nuestro estilo</h2>
+          <h2 className="leading-snug">Una pincelada de nuestro estilo</h2>
           <p className="section-subtitle mx-auto text-center">
             Retratos editoriales, lifestyle y fotografía de producto con una estética cálida y contemporánea.
           </p>

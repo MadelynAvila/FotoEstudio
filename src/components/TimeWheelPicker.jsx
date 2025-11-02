@@ -167,7 +167,7 @@ export default function TimeWheelPicker({
                     type="button"
                     disabled={disabled}
                     aria-selected={seleccionado}
-                    className={`time-wheel-option ${seleccionado ? 'time-wheel-option-active' : ''}`}
+                    className={`time-wheel-option hora-opcion ${seleccionado ? 'time-wheel-option-active' : ''}`}
                     onClick={() => {
                       onChange(opcion.value)
                     }}

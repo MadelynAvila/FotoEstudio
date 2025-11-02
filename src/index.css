@@ -5,23 +5,53 @@
 @tailwind utilities;
 
 @layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-size: 100%;
+  }
+
   :root {
     --border: #e4ddcc;
     color-scheme: light;
   }
 
   body {
-    @apply font-sans bg-sand text-slate-700 antialiased; 
+    @apply font-sans bg-sand text-slate-700 antialiased;
     background-image: radial-gradient(circle at top, rgba(255, 255, 255, 0.9), rgba(250, 248, 244, 0.8) 45%, rgba(235, 226, 212, 0.4));
     min-height: 100vh;
+    overflow-x: hidden;
+    margin: 0;
+  }
+
+  body, main, header, footer, section, div {
+    max-width: 100%;
   }
 
   main {
     @apply relative;
   }
 
+  img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+  }
+
   h1, h2, h3, h4, h5, h6 {
     @apply font-display text-umber tracking-tight;
+  }
+
+  h1, h2 {
+    font-size: clamp(1.5rem, 4vw, 2.2rem);
+    line-height: 1.3;
+  }
+
+  p {
+    font-size: clamp(0.95rem, 3.5vw, 1.1rem);
+    margin-bottom: 1rem;
   }
 
   a {
@@ -31,15 +61,15 @@
 
 @layer components {
   .container-1120 {
-    @apply max-w-[1120px] mx-auto px-5 md:px-8;
+    @apply max-w-screen-xl mx-auto px-5 md:px-8;
   }
 
   .page-section {
-    @apply py-14 md:py-20;
+    @apply py-8;
   }
 
   .section-shell {
-    @apply container-1120 grid gap-12 md:gap-16;
+    @apply container-1120 grid gap-8;
   }
 
   .section-heading {
@@ -55,7 +85,7 @@
   }
 
   .card {
-    @apply bg-white border border-[color:var(--border)] rounded-3xl shadow-soft overflow-hidden;
+    @apply bg-white border border-[color:var(--border)] rounded-3xl shadow-soft overflow-hidden max-w-full;
   }
 
   .card-body {
@@ -67,11 +97,27 @@
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 font-semibold rounded-full px-5 py-2.5 border transition-all duration-200 ease-out;
+    @apply font-semibold rounded-full border transition-all duration-200 ease-out px-5 py-3 text-center w-full block;
+    display: block;
+    margin-bottom: 0.625rem;
+  }
+
+  @screen sm {
+    .btn {
+      @apply inline-flex items-center justify-center gap-2 w-auto mb-0;
+      display: inline-flex;
+    }
   }
 
   .btn-primary {
-    @apply bg-umber text-white border-umber shadow-md shadow-umber/20 hover:shadow-lg hover:-translate-y-0.5;
+    @apply text-white border-transparent shadow-md shadow-umber/20;
+    background-color: #3b302a;
+    transition: background-color 0.3s ease;
+  }
+
+  .btn-primary:hover,
+  .btn-primary:focus-visible {
+    background-color: #5a463c;
   }
 
   .btn-ghost {
@@ -288,4 +334,60 @@
       margin-bottom: 16px;
     }
   }
+}
+
+.mobile-nav {
+  width: 100%;
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.3s ease, opacity 0.3s ease;
+}
+
+.mobile-nav.mobile-nav-open {
+  max-height: 24rem;
+  opacity: 1;
+}
+
+@media (min-width: 768px) {
+  .mobile-nav {
+    max-height: none;
+    opacity: 1;
+    overflow: visible;
+  }
+}
+
+.hora-selector {
+  display: flex;
+  gap: 1.25rem;
+}
+
+@media (max-width: 600px) {
+  .hora-selector {
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+}
+
+.hora-opcion {
+  min-height: 44px;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  font-size: 1rem;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 48, 42, 0.18);
 }

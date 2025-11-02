@@ -67,7 +67,7 @@ export default function Packages(){
       <div className="section-shell">
         <div className="section-heading">
           <span className="section-eyebrow">Paquetes</span>
-          <h1 className="text-3xl md:text-4xl">
+          <h1 className="leading-snug">
             {evento ? 'Paquetes filtrados por servicio' : 'Todos los paquetes'}
           </h1>
           <p className="section-subtitle">

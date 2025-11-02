@@ -44,14 +44,14 @@ export default function Login() {
       <div className="relative z-10 flex min-h-screen items-center justify-center px-4 py-20">
         <form onSubmit={onSubmitLogin} className="card w-full max-w-md space-y-6 p-10 shadow-2xl shadow-black/15">
           <div className="space-y-2 text-center">
-            <h1 className="text-3xl font-display text-umber">Iniciar sesión</h1>
+            <h1 className="font-display leading-snug text-umber">Iniciar sesión</h1>
             <p className="text-sm text-umber/70">Accede con tu usuario o correo electrónico para continuar.</p>
           </div>
 
           <label className="grid gap-1 text-sm font-medium text-umber/80">
             Usuario o correo
             <input
-              className="w-full rounded-xl2 border border-sand px-3 py-2 shadow-inner focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+              className="border border-sand focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               placeholder="Ingresa tu usuario o correo"
@@ -64,7 +64,7 @@ export default function Login() {
             Contraseña
             <input
               type="password"
-              className="w-full rounded-xl2 border border-sand px-3 py-2 shadow-inner focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+              className="border border-sand focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Contraseña"

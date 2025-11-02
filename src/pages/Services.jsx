@@ -66,7 +66,7 @@ export default function Services(){
       <div className="section-shell">
         <div className="section-heading">
           <span className="section-eyebrow">Servicios</span>
-          <h1 className="text-3xl md:text-4xl">Especialidades fotográficas</h1>
+          <h1 className="leading-snug">Especialidades fotográficas</h1>
           <p className="section-subtitle">
             Diseñamos sesiones enfocadas en los distintos momentos de tu vida y de tu marca. Encuentra el servicio ideal y personalízalo con nuestros paquetes.
           </p>

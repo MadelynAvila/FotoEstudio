@@ -80,7 +80,7 @@ export default function Register() {
       <div className="relative z-10 flex min-h-screen items-center justify-center px-4 py-20">
         <form onSubmit={onSubmit} className="card w-full max-w-2xl space-y-6 p-10 shadow-2xl shadow-black/15">
           <div className="space-y-2 text-center">
-            <h1 className="text-3xl font-display text-slate-900">Crear cuenta</h1>
+            <h1 className="font-display leading-snug text-slate-900">Crear cuenta</h1>
             <p className="text-sm text-slate-500">
               Regístrate para reservar sesiones y gestionar tus actividades como cliente.
             </p>
@@ -89,7 +89,7 @@ export default function Register() {
           <label className="grid gap-1 text-sm font-medium text-slate-700">
             Nombre completo
             <input
-              className="w-full rounded-xl2 border border-slate-200 px-3 py-2 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+              className="border border-slate-200 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
               value={formData.fullName}
               onChange={onChangeField('fullName')}
               placeholder="Ej. Ana Pérez"
@@ -100,7 +100,7 @@ export default function Register() {
           <label className="grid gap-1 text-sm font-medium text-slate-700">
             Usuario
             <input
-              className="w-full rounded-xl2 border border-slate-200 px-3 py-2 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+              className="border border-slate-200 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
               value={formData.username}
               onChange={onChangeField('username')}
               placeholder="Elige un usuario único"
@@ -113,7 +113,7 @@ export default function Register() {
               Contraseña
               <input
                 type="password"
-                className="w-full rounded-xl2 border border-slate-200 px-3 py-2 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                className="border border-slate-200 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
                 value={formData.password}
                 onChange={onChangeField('password')}
                 placeholder="Mínimo 6 caracteres"
@@ -125,7 +125,7 @@ export default function Register() {
               Confirmar contraseña
               <input
                 type="password"
-                className="w-full rounded-xl2 border border-slate-200 px-3 py-2 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                className="border border-slate-200 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
                 value={formData.confirmPassword}
                 onChange={onChangeField('confirmPassword')}
                 placeholder="Repite tu contraseña"
@@ -137,7 +137,7 @@ export default function Register() {
           <label className="grid gap-1 text-sm font-medium text-slate-700">
             Teléfono (opcional)
             <input
-              className="w-full rounded-xl2 border border-slate-200 px-3 py-2 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+              className="border border-slate-200 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
               value={formData.phone}
               onChange={onChangeField('phone')}
               placeholder="Ej. +502 1234-5678"
@@ -145,7 +145,7 @@ export default function Register() {
             />
           </label>
 
-          <div className="space-y-3 rounded-xl2 border border-slate-200 p-4">
+          <div className="space-y-3 rounded-lg border border-slate-200 p-4">
             <label className="flex items-start gap-3 text-sm font-medium text-slate-700">
               <input
                 type="checkbox"
@@ -159,7 +159,7 @@ export default function Register() {
             {formData.includeEmail && (
               <input
                 type="email"
-                className="w-full rounded-xl2 border border-slate-200 px-3 py-2 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                className="border border-slate-200 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
                 value={formData.email}
                 onChange={onChangeField('email')}
                 placeholder="correo@ejemplo.com"
