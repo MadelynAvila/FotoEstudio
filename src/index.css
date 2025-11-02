@@ -178,6 +178,7 @@
 
   .time-wheel-shell {
     @apply relative overflow-hidden rounded-2xl border border-[color:var(--border)] bg-white shadow-inner;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
   }
 
   .time-wheel-shell:focus-within {
@@ -191,6 +192,7 @@
   .time-wheel {
     @apply relative max-h-56 overflow-y-auto scroll-smooth;
     scroll-snap-type: y mandatory;
+    scroll-padding: 3rem;
   }
 
   .time-wheel::-webkit-scrollbar {
@@ -202,12 +204,19 @@
   }
 
   .time-wheel-items {
-    @apply relative flex flex-col gap-1 py-6;
+    @apply relative flex flex-col gap-2 py-6;
   }
 
   .time-wheel-option {
-    @apply relative mx-3 flex items-center justify-between rounded-xl px-4 py-3 text-base font-medium text-slate-600 transition-colors duration-150 focus:outline-none;
+    @apply relative mx-3 flex items-center justify-between rounded-xl px-4 text-base font-medium text-slate-600 focus:outline-none;
     scroll-snap-align: center;
+    border: 2px solid transparent;
+    min-height: 44px;
+    min-width: 44px;
+    padding-block: 0.5rem;
+    line-height: 1.5;
+    font-size: 1rem;
+    transition: all 0.3s ease;
   }
 
   .time-wheel-option:hover {
@@ -215,18 +224,37 @@
   }
 
   .time-wheel-option-active {
-    @apply bg-umber/10 text-umber font-semibold shadow-sm;
+    @apply text-umber font-semibold;
+    background-color: #f1ede9;
+    border-color: #c0a66b;
+    box-shadow: inset 0 0 0 1px rgba(192, 166, 107, 0.25);
   }
 
   .time-wheel-option-label {
-    @apply text-lg;
+    @apply text-base;
+  }
+
+  .time-wheel-option-check {
+    @apply flex h-5 w-5 items-center justify-center rounded-full text-sm font-bold text-umber;
+    background-color: rgba(192, 166, 107, 0.12);
+    opacity: 0;
+    transform: scale(0.85);
+    transition: all 0.3s ease;
+  }
+
+  .time-wheel-option-check-visible {
+    opacity: 1;
+    transform: scale(1);
   }
 
   .time-wheel-indicator {
-    @apply pointer-events-none absolute left-2 right-2 rounded-xl border border-umber/30 shadow-sm;
+    @apply pointer-events-none absolute left-3 right-3 rounded-xl;
     top: 50%;
     transform: translateY(-50%);
-    height: 3rem;
+    height: 3.25rem;
+    border-top: 1px solid rgba(192, 166, 107, 0.35);
+    border-bottom: 1px solid rgba(192, 166, 107, 0.35);
+    box-shadow: inset 0 0 14px rgba(0, 0, 0, 0.06);
   }
 
   .time-wheel-gradient {
@@ -245,5 +273,19 @@
 
   .time-wheel-empty {
     @apply flex h-32 items-center justify-center px-6 py-4 text-sm text-slate-500;
+  }
+
+  .booking-time-grid {
+    @apply grid gap-4 sm:grid-cols-2;
+  }
+
+  @media (max-width: 400px) {
+    .booking-time-grid {
+      @apply grid-cols-1;
+    }
+
+    .booking-time-grid > *:not(:last-child) {
+      margin-bottom: 16px;
+    }
   }
 }
