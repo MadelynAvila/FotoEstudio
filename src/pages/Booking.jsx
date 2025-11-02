@@ -1,6 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import DatePicker, { registerLocale } from 'react-datepicker'
+import dayjs from 'dayjs'
+import 'dayjs/locale/es'
+import esLocale from 'date-fns/locale/es'
+import 'react-datepicker/dist/react-datepicker.css'
 import { useAuth } from '../auth/authContext'
 import { supabase } from '../lib/supabaseClient'
+
+registerLocale('es', esLocale)
+dayjs.locale('es')
 
 /** Convierte una hora (HH:mm) a minutos totales */
 const horaATotalMinutos = (hora) => {
@@ -25,6 +33,192 @@ const formatearHoraSQL = (hora) => {
 }
 
 const MIN_BUFFER_MINUTES = 60
+const WORK_DAY_START_MINUTES = 8 * 60
+const WORK_DAY_END_MINUTES = 20 * 60
+const TIME_STEP_MINUTES = 30
+const MIN_RESERVATION_MINUTES = 60
+const CALENDAR_RANGE_DAYS = 90
+
+const minutosAFormato = (totalMinutos) => {
+  const horas = Math.floor(totalMinutos / 60)
+  const minutos = totalMinutos % 60
+  return `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}`
+}
+
+const restarIntervalo = (intervalos, intervaloOcupado) => {
+  if (!Array.isArray(intervalos)) return []
+  const { inicio: inicioOcupado, fin: finOcupado } = intervaloOcupado
+  if (inicioOcupado == null || finOcupado == null || finOcupado <= inicioOcupado) {
+    return intervalos.map(item => ({ ...item }))
+  }
+
+  const resultado = []
+  intervalos.forEach(intervalo => {
+    const { inicio, fin } = intervalo
+    if (inicio == null || fin == null || fin <= inicio) return
+
+    // Sin traslape
+    if (finOcupado <= inicio || inicioOcupado >= fin) {
+      resultado.push({ ...intervalo })
+      return
+    }
+
+    // Parte previa disponible
+    if (inicioOcupado > inicio) {
+      const nuevoFin = Math.max(inicio, Math.min(fin, inicioOcupado))
+      if (nuevoFin - inicio >= TIME_STEP_MINUTES) {
+        resultado.push({ inicio, fin: nuevoFin })
+      }
+    }
+
+    // Parte posterior disponible
+    if (finOcupado < fin) {
+      const nuevoInicio = Math.min(fin, Math.max(inicio, finOcupado))
+      if (fin - nuevoInicio >= TIME_STEP_MINUTES) {
+        resultado.push({ inicio: nuevoInicio, fin })
+      }
+    }
+  })
+
+  return resultado.map(item => ({ ...item }))
+}
+
+const unirIntervalos = (intervalos) => {
+  if (!Array.isArray(intervalos) || intervalos.length === 0) return []
+  const ordenados = [...intervalos]
+    .filter(intervalo => intervalo && intervalo.inicio != null && intervalo.fin != null && intervalo.fin > intervalo.inicio)
+    .sort((a, b) => a.inicio - b.inicio)
+
+  if (ordenados.length === 0) return []
+
+  const resultado = [ordenados[0]]
+  for (let i = 1; i < ordenados.length; i += 1) {
+    const actual = ordenados[i]
+    const previo = resultado[resultado.length - 1]
+    if (actual.inicio <= previo.fin) {
+      previo.fin = Math.max(previo.fin, actual.fin)
+    } else if (actual.inicio - previo.fin <= TIME_STEP_MINUTES) {
+      // Une intervalos contiguos separados únicamente por el tamaño del paso
+      previo.fin = Math.max(previo.fin, actual.fin)
+    } else {
+      resultado.push({ ...actual })
+    }
+  }
+
+  return resultado.map(intervalo => ({ ...intervalo }))
+}
+
+const calcularDisponibilidadDia = (fotografos, sesionesDia) => {
+  if (!Array.isArray(fotografos) || fotografos.length === 0) {
+    return { estado: 'full', bloques: [] }
+  }
+
+  const mapaDisponibilidad = new Map()
+  fotografos.forEach(fotografo => {
+    mapaDisponibilidad.set(fotografo.id, [
+      { inicio: WORK_DAY_START_MINUTES, fin: WORK_DAY_END_MINUTES }
+    ])
+  })
+
+  const sesiones = (sesionesDia ?? []).filter(sesion => {
+    if (!sesion || !sesion.idfotografo || !sesion.horainicio || !sesion.horafin) return false
+    // Considera como ocupado cuando la sesión no está marcada explícitamente como disponible
+    return sesion.disponible !== true
+  })
+
+  sesiones.forEach(sesion => {
+    const intervalosFotografo = mapaDisponibilidad.get(sesion.idfotografo)
+    if (!intervalosFotografo) return
+
+    const inicioSesion = horaATotalMinutos(sesion.horainicio)
+    const finSesion = horaATotalMinutos(sesion.horafin)
+    if (inicioSesion == null || finSesion == null || finSesion <= inicioSesion) return
+
+    const inicioBloqueado = Math.max(WORK_DAY_START_MINUTES, inicioSesion - MIN_BUFFER_MINUTES)
+    const finBloqueado = Math.min(WORK_DAY_END_MINUTES, finSesion + MIN_BUFFER_MINUTES)
+
+    const intervalosActualizados = restarIntervalo(intervalosFotografo, {
+      inicio: inicioBloqueado,
+      fin: finBloqueado
+    })
+    mapaDisponibilidad.set(sesion.idfotografo, intervalosActualizados)
+  })
+
+  const todosLosBloques = []
+  mapaDisponibilidad.forEach(intervalos => {
+    intervalos.forEach(intervalo => {
+      if (intervalo.fin - intervalo.inicio >= MIN_RESERVATION_MINUTES) {
+        todosLosBloques.push({ ...intervalo })
+      }
+    })
+  })
+
+  const bloquesUnidos = unirIntervalos(todosLosBloques)
+  const duracionTotalDisponible = bloquesUnidos.reduce((acumulado, bloque) => acumulado + (bloque.fin - bloque.inicio), 0)
+  const duracionDia = WORK_DAY_END_MINUTES - WORK_DAY_START_MINUTES
+
+  if (bloquesUnidos.length === 0 || duracionTotalDisponible < MIN_RESERVATION_MINUTES) {
+    return { estado: 'full', bloques: [] }
+  }
+
+  if (duracionTotalDisponible >= duracionDia - TIME_STEP_MINUTES) {
+    return { estado: 'available', bloques: bloquesUnidos }
+  }
+
+  return { estado: 'partial', bloques: bloquesUnidos }
+}
+
+const construirMapaDisponibilidad = (fotografos, sesiones, fechaInicio) => {
+  const mapaPorFecha = new Map()
+  ;(sesiones ?? []).forEach(sesion => {
+    const fecha = normalizarFechaInput(sesion?.fecha)
+    if (!fecha) return
+    if (!mapaPorFecha.has(fecha)) {
+      mapaPorFecha.set(fecha, [])
+    }
+    mapaPorFecha.get(fecha).push(sesion)
+  })
+
+  const resultado = {}
+  for (let i = 0; i <= CALENDAR_RANGE_DAYS; i += 1) {
+    const fecha = fechaInicio.add(i, 'day')
+    const clave = fecha.format('YYYY-MM-DD')
+    const sesionesDia = mapaPorFecha.get(clave) ?? []
+    resultado[clave] = calcularDisponibilidadDia(fotografos, sesionesDia)
+  }
+
+  return resultado
+}
+
+const generarOpcionesInicio = (bloques) => {
+  if (!Array.isArray(bloques) || bloques.length === 0) return []
+  const opciones = []
+  bloques.forEach(bloque => {
+    for (let minuto = bloque.inicio; minuto <= bloque.fin - MIN_RESERVATION_MINUTES; minuto += TIME_STEP_MINUTES) {
+      opciones.push(minutosAFormato(minuto))
+    }
+  })
+  return opciones
+}
+
+const generarOpcionesFin = (bloques, horaInicio) => {
+  if (!horaInicio) return []
+  const inicioSeleccionado = horaATotalMinutos(horaInicio)
+  if (inicioSeleccionado == null) return []
+
+  const bloque = (bloques ?? []).find(item => inicioSeleccionado >= item.inicio && inicioSeleccionado < item.fin)
+  if (!bloque) return []
+
+  const opciones = []
+  for (
+    let minuto = inicioSeleccionado + MIN_RESERVATION_MINUTES;
+    minuto <= bloque.fin;
+    minuto += TIME_STEP_MINUTES
+  ) {
+    opciones.push(minutosAFormato(minuto))
+  }
+  return opciones
+}
 
 /** Normaliza fecha para que siempre quede en formato YYYY-MM-DD */
 const normalizarFechaInput = (valor) => {
@@ -82,9 +276,40 @@ export default function Booking() {
   const [fotografos, setFotografos] = useState([])
   const [disponibilidadFotografos, setDisponibilidadFotografos] = useState({})
   const [agendaDisponiblePorFotografo, setAgendaDisponiblePorFotografo] = useState({})
+  const [calendarAvailability, setCalendarAvailability] = useState({})
+  const [availableBlocks, setAvailableBlocks] = useState([])
+  const [calendarError, setCalendarError] = useState('')
+  const [loadingCalendar, setLoadingCalendar] = useState(false)
+  const [selectedDate, setSelectedDate] = useState(null)
+  const [startOptions, setStartOptions] = useState([])
+  const [endOptions, setEndOptions] = useState([])
   const { user } = useAuth()
 
   const fotografosList = useMemo(() => (Array.isArray(fotografos) ? fotografos : []), [fotografos])
+  const today = useMemo(() => dayjs().startOf('day'), [])
+  const maxSelectableDate = useMemo(() => dayjs().add(CALENDAR_RANGE_DAYS, 'day').toDate(), [])
+
+  const fetchCalendarAvailability = useCallback(async () => {
+    if (!fotografosList.length) {
+      return { mapa: {}, error: null }
+    }
+
+    const hoy = dayjs().startOf('day').format('YYYY-MM-DD')
+    const limite = dayjs().startOf('day').add(CALENDAR_RANGE_DAYS, 'day').format('YYYY-MM-DD')
+
+    const { data, error: agendaError } = await supabase
+      .from('agenda')
+      .select('id, idfotografo, fecha, horainicio, horafin, disponible')
+      .gte('fecha', hoy)
+      .lte('fecha', limite)
+
+    if (agendaError) {
+      return { mapa: {}, error: agendaError }
+    }
+
+    const mapa = construirMapaDisponibilidad(fotografosList, data, dayjs(hoy))
+    return { mapa, error: null }
+  }, [fotografosList])
 
   useEffect(() => {
     try {
@@ -153,6 +378,120 @@ export default function Booking() {
     loadFotografos()
   }, [])
 
+  useEffect(() => {
+    let cancelado = false
+
+    const cargarDisponibilidadCalendario = async () => {
+      if (!fotografosList.length) {
+        if (cancelado) return
+        setCalendarAvailability({})
+        setAvailableBlocks([])
+        setCalendarError('')
+        setLoadingCalendar(false)
+        return
+      }
+
+      setLoadingCalendar(true)
+      const { mapa, error: disponibilidadError } = await fetchCalendarAvailability()
+      if (cancelado) return
+
+      if (disponibilidadError) {
+        console.error('No se pudo cargar la disponibilidad del calendario', disponibilidadError)
+        setCalendarError('No pudimos cargar la disponibilidad del calendario. Intenta nuevamente en unos minutos.')
+        setCalendarAvailability({})
+        setAvailableBlocks([])
+      } else {
+        setCalendarError('')
+        setCalendarAvailability(mapa)
+      }
+
+      setLoadingCalendar(false)
+    }
+
+    cargarDisponibilidadCalendario()
+
+    return () => {
+      cancelado = true
+    }
+  }, [fetchCalendarAvailability, fotografosList])
+
+  useEffect(() => {
+    if (!selectedDate) {
+      setAvailableBlocks([])
+      setStartOptions([])
+      setEndOptions([])
+      setForm(prev => {
+        if (!prev.fecha && !prev.horaInicio && !prev.horaFin) return prev
+        return { ...prev, fecha: '', horaInicio: '', horaFin: '' }
+      })
+      return
+    }
+
+    const clave = dayjs(selectedDate).format('YYYY-MM-DD')
+    const info = calendarAvailability[clave]
+    if (!info || !Array.isArray(info.bloques) || info.bloques.length === 0) {
+      setAvailableBlocks([])
+      setStartOptions([])
+      setEndOptions([])
+      setForm(prev => {
+        if (!prev.fecha && !prev.horaInicio && !prev.horaFin) return prev
+        return { ...prev, fecha: '', horaInicio: '', horaFin: '' }
+      })
+      return
+    }
+
+    setAvailableBlocks(info.bloques)
+    setForm(prev => (prev.fecha === clave ? prev : { ...prev, fecha: clave }))
+  }, [calendarAvailability, selectedDate])
+
+  useEffect(() => {
+    const opcionesInicio = generarOpcionesInicio(availableBlocks)
+    setStartOptions(opcionesInicio)
+    setForm(prev => {
+      if (!prev.horaInicio && !prev.horaFin) {
+        return prev
+      }
+      if (opcionesInicio.includes(prev.horaInicio)) {
+        return prev
+      }
+      return { ...prev, horaInicio: '', horaFin: '' }
+    })
+  }, [availableBlocks])
+
+  useEffect(() => {
+    const opcionesFin = generarOpcionesFin(availableBlocks, form.horaInicio)
+    setEndOptions(opcionesFin)
+    setForm(prev => {
+      if (!prev.horaFin) return prev
+      if (opcionesFin.includes(prev.horaFin)) return prev
+      return { ...prev, horaFin: '' }
+    })
+  }, [availableBlocks, form.horaInicio])
+
+  const filterSelectableDate = useCallback((date) => {
+    if (!date) return false
+    const candidato = dayjs(date).startOf('day')
+    if (candidato.isBefore(today)) return false
+    if (!fotografosList.length) return false
+    const clave = candidato.format('YYYY-MM-DD')
+    const info = calendarAvailability[clave]
+    if (!info) return false
+    return info.estado !== 'full'
+  }, [calendarAvailability, fotografosList, today])
+
+  const getDayClassName = useCallback((date) => {
+    if (!date) return ''
+    const candidato = dayjs(date).startOf('day')
+    if (candidato.isBefore(today)) return 'rsv-day-full'
+    const clave = candidato.format('YYYY-MM-DD')
+    const info = calendarAvailability[clave]
+    if (!info) return ''
+    if (info.estado === 'full') return 'rsv-day-full'
+    if (info.estado === 'partial') return 'rsv-day-partial'
+    if (info.estado === 'available') return 'rsv-day-available'
+    return ''
+  }, [calendarAvailability, today])
+
   /** Rellenar automáticamente datos del usuario */
   useEffect(() => {
     if (user && !prefilled) {
@@ -167,6 +506,7 @@ export default function Booking() {
     if (!user && prefilled) {
       setForm(initialForm)
       setPrefilled(false)
+      setSelectedDate(null)
     }
   }, [user, prefilled])
 
@@ -499,14 +839,28 @@ export default function Booking() {
         }
       ])
 
+      const { mapa: mapaActualizado, error: calendarioActualizadoError } = await fetchCalendarAvailability()
+      if (calendarioActualizadoError) {
+        console.error('No se pudo actualizar la disponibilidad del calendario', calendarioActualizadoError)
+      } else {
+        setCalendarAvailability(mapaActualizado)
+      }
+
       setMensaje('Reserva creada correctamente.')
       setForm({ ...initialForm, nombre, telefono, correo })
+      setSelectedDate(null)
     } finally {
       setEnviando(false)
     }
   }
 
   /** Mensaje dinámico */
+  const selectedDateKey = useMemo(
+    () => (selectedDate ? dayjs(selectedDate).format('YYYY-MM-DD') : ''),
+    [selectedDate]
+  )
+  const selectedDateInfo = selectedDateKey ? calendarAvailability[selectedDateKey] : null
+  const hayBloquesDisponibles = availableBlocks.length > 0
   const hayFotografos = fotografosList.length > 0
   const horarioCompleto = Boolean(form.fecha && form.horaInicio && form.horaFin)
   const hayDisponibilidad = Object.keys(disponibilidadFotografos).length > 0
@@ -590,29 +944,94 @@ export default function Booking() {
               })}
             </select>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <input
-                type="date"
-                value={form.fecha}
-                onChange={e => updateField('fecha', e.target.value)}
-                className={inputClass}
-                disabled={!user || enviando}
-              />
+            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="space-y-3">
+                <DatePicker
+                  selected={selectedDate}
+                  onChange={date => setSelectedDate(date)}
+                  className={inputClass}
+                  placeholderText="Selecciona una fecha disponible"
+                  locale="es"
+                  dateFormat="dd 'de' MMMM, yyyy"
+                  minDate={today.toDate()}
+                  maxDate={maxSelectableDate}
+                  filterDate={filterSelectableDate}
+                  dayClassName={getDayClassName}
+                  calendarClassName="booking-datepicker"
+                  popperClassName="booking-datepicker-popper"
+                  disabled={!user || enviando || !hayFotografos}
+                  isClearable
+                  showPopperArrow={false}
+                />
+                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                    Disponible
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" />
+                    Parcial
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-slate-300" />
+                    Sin cupo
+                  </span>
+                </div>
+                <div className="rounded-2xl border border-dashed border-[color:var(--border)] bg-white/70 px-4 py-3 text-xs text-slate-600">
+                  {calendarError ? (
+                    <span className="text-red-600">{calendarError}</span>
+                  ) : loadingCalendar ? (
+                    <span>Consultando disponibilidad…</span>
+                  ) : !selectedDate ? (
+                    <span>Selecciona una fecha para ver horarios disponibles.</span>
+                  ) : !hayBloquesDisponibles ? (
+                    <span>Este día está completamente reservado.</span>
+                  ) : (
+                    <>
+                      <span className="font-medium text-slate-700">Horarios disponibles</span>
+                      <ul className="mt-2 space-y-1">
+                        {availableBlocks.map(bloque => (
+                          <li key={`${bloque.inicio}-${bloque.fin}`}>
+                            {minutosAFormato(bloque.inicio)} – {minutosAFormato(bloque.fin)}
+                          </li>
+                        ))}
+                      </ul>
+                      {selectedDateInfo?.estado === 'partial' && (
+                        <p className="mt-2 text-[11px] text-slate-500">
+                          Elige tu hora de inicio dentro de cualquiera de los bloques disponibles.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
               <div className="grid gap-4 sm:grid-cols-2">
-                <input
-                  type="time"
+                <select
                   value={form.horaInicio}
                   onChange={e => updateField('horaInicio', e.target.value)}
                   className={inputClass}
-                  disabled={!user || enviando}
-                />
-                <input
-                  type="time"
+                  disabled={!user || enviando || !startOptions.length}
+                >
+                  <option value="">Hora de inicio</option>
+                  {startOptions.map(opcion => (
+                    <option key={opcion} value={opcion}>
+                      {opcion}
+                    </option>
+                  ))}
+                </select>
+                <select
                   value={form.horaFin}
                   onChange={e => updateField('horaFin', e.target.value)}
                   className={inputClass}
-                  disabled={!user || enviando}
-                />
+                  disabled={!user || enviando || !endOptions.length}
+                >
+                  <option value="">Hora de fin</option>
+                  {endOptions.map(opcion => (
+                    <option key={opcion} value={opcion}>
+                      {opcion}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
