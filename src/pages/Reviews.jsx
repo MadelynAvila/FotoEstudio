@@ -202,9 +202,14 @@ export default function Reviews(){
                   const nombrePaquete = actividad.paquete?.nombre_paquete
                   const agenda = Array.isArray(actividad.agenda) ? actividad.agenda[0] : actividad.agenda
                   const fecha = agenda?.fecha ? new Date(agenda.fecha).toLocaleDateString('es-GT') : 'Fecha por definir'
+                  const horarioInicio = agenda?.horainicio ? agenda.horainicio.slice(0, 5) : null
+                  const horarioFin = agenda?.horafin ? agenda.horafin.slice(0, 5) : null
+                  const horario = horarioInicio && horarioFin ? `${horarioInicio} a ${horarioFin}` : horarioInicio || ''
+                  const titulo = nombrePaquete || actividad.nombre_actividad || 'Reserva sin título'
+                  const descripcion = horario ? `${fecha} · ${horario}` : fecha
                   return (
                     <option key={actividad.id} value={actividad.id}>
-                      #{actividad.id} — {nombrePaquete || actividad.nombre_actividad || 'Reserva sin título'} ({fecha})
+                      {titulo} — {descripcion}
                     </option>
                   )
                 })}

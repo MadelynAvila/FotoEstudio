@@ -380,7 +380,6 @@ export default function MiCuenta () {
                 <div className="space-y-1">
                   <h2 className="text-2xl font-semibold text-[#3b302a]">{paquete?.nombre_paquete || 'Paquete por definir'}</h2>
                   <p className="text-sm text-slate-600">{reserva.nombre_actividad || 'Actividad sin título'}</p>
-                  <p className="text-xs uppercase tracking-[.2em] text-slate-400">ID de reserva: {reserva.id}</p>
                 </div>
 
                 <section className="space-y-4">
