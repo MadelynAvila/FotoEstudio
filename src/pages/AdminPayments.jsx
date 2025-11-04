@@ -9,7 +9,20 @@ const PAYMENT_METHODS = [
   { value: 'Efectivo', label: 'Efectivo' }
 ]
 
-const defaultForm = { idactividad: '', monto: '', metodo: PAYMENT_METHODS[0].value, detalle: '' }
+const createDefaultForm = () => {
+  const now = new Date()
+  const hours = String(now.getHours()).padStart(2, '0')
+  const minutes = String(now.getMinutes()).padStart(2, '0')
+  return {
+    idactividad: '',
+    monto: '',
+    metodo: PAYMENT_METHODS[0].value,
+    detalle: '',
+    fechaPago: now,
+    horaPago: `${hours}:${minutes}`,
+    esAbono: false
+  }
+}
 const defaultFilters = { search: '', metodo: 'all', rangoFechas: [null, null] }
 
 function formatDate(value) {
@@ -55,12 +68,13 @@ function formatCurrency(value) {
 export default function AdminPayments(){
   const [activities, setActivities] = useState([])
   const [payments, setPayments] = useState([])
-  const [form, setForm] = useState(defaultForm)
+  const [form, setForm] = useState(createDefaultForm)
   const [filters, setFilters] = useState(defaultFilters)
   const [selectedInvoice, setSelectedInvoice] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState({ type: '', message: '' })
+  const [toast, setToast] = useState(null)
 
   const fetchPayments = useCallback(async () => {
     setLoading(true)
@@ -146,7 +160,7 @@ export default function AdminPayments(){
   }
 
   const resetForm = () => {
-    setForm(defaultForm)
+    setForm(createDefaultForm())
     setFeedback({ type: '', message: '' })
   }
 
@@ -154,16 +168,26 @@ export default function AdminPayments(){
     setFilters(defaultFilters)
   }
 
-  const activitiesWithoutPayment = useMemo(() => {
-    if (!activities.length) return []
-    const pagosSet = new Set(payments.map(pago => Number(pago.actividadId)))
-    return activities.filter(activity => !pagosSet.has(Number(activity.id)))
-  }, [activities, payments])
-
   const activitiesMap = useMemo(
     () => new Map(activities.map(activity => [Number(activity.id), activity])),
     [activities]
   )
+
+  const paymentsByActivity = useMemo(() => {
+    const map = new Map()
+    payments.forEach(pago => {
+      const key = Number(pago.actividadId)
+      if (!map.has(key)) {
+        map.set(key, [])
+      }
+      map.get(key).push(pago)
+    })
+    return map
+  }, [payments])
+
+  const selectedActivity = form.idactividad ? activitiesMap.get(Number(form.idactividad)) || null : null
+  const existingPaymentsForSelected = selectedActivity ? paymentsByActivity.get(Number(selectedActivity.id)) ?? [] : []
+  const hasPreviousPayment = existingPaymentsForSelected.length > 0
 
   const filteredPayments = useMemo(() => {
     const searchTerm = normalize(filters.search)
@@ -201,6 +225,28 @@ export default function AdminPayments(){
     },
     [activitiesMap]
   )
+
+  const handleSelectActivity = (value) => {
+    const actividad = value ? activitiesMap.get(Number(value)) || null : null
+    const numericPrice = actividad?.paquetePrecio != null && actividad.paquetePrecio !== ''
+      ? Number(actividad.paquetePrecio)
+      : null
+    const monto = numericPrice != null && !Number.isNaN(numericPrice)
+      ? String(numericPrice)
+      : ''
+    setForm(prev => ({
+      ...prev,
+      idactividad: value,
+      monto,
+      esAbono: false
+    }))
+  }
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = window.setTimeout(() => setToast(null), 4000)
+    return () => window.clearTimeout(timer)
+  }, [toast])
 
   const paymentColumns = useMemo(
     () => [
@@ -275,27 +321,47 @@ export default function AdminPayments(){
     setSaving(true)
 
     const actividadId = Number(form.idactividad)
-    const { data: existingPayments = [], error: existingError } = await supabase
-      .from('pago')
-      .select('id')
-      .eq('idactividad', actividadId)
-      .limit(1)
 
-    if (existingError) {
-      console.error('Error verificando duplicados de pago', existingError)
+    if (!form.esAbono) {
+      const { data: existingPayments = [], error: existingError } = await supabase
+        .from('pago')
+        .select('id')
+        .eq('idactividad', actividadId)
+        .limit(1)
+
+      if (existingError) {
+        console.error('Error verificando duplicados de pago', existingError)
+      }
+
+      if ((existingPayments ?? []).length) {
+        setFeedback({
+          type: 'warning',
+          message: 'Esta actividad ya tiene un pago. Marca la opción "Registrar como abono" si deseas registrar un abono.'
+        })
+        setSaving(false)
+        return
+      }
     }
 
-    if ((existingPayments ?? []).length) {
-      setFeedback({ type: 'error', message: 'Esta reserva ya cuenta con un pago registrado.' })
-      setSaving(false)
-      return
+    let fechaPago = form.fechaPago instanceof Date ? new Date(form.fechaPago) : null
+    if (!fechaPago || Number.isNaN(fechaPago.getTime())) {
+      fechaPago = new Date()
+    }
+
+    if (form.horaPago) {
+      const [hours, minutes] = form.horaPago.split(':')
+      const hoursNum = Number(hours)
+      const minutesNum = Number(minutes)
+      if (!Number.isNaN(hoursNum) && !Number.isNaN(minutesNum)) {
+        fechaPago.setHours(hoursNum, minutesNum, 0, 0)
+      }
     }
 
     const payload = {
       idactividad: actividadId,
       metodo_pago: form.metodo || PAYMENT_METHODS[0].value,
       monto,
-      fecha_pago: new Date().toISOString(),
+      fecha_pago: fechaPago.toISOString(),
       detalle_pago: form.detalle ? form.detalle.trim() : null
     }
 
@@ -331,8 +397,9 @@ export default function AdminPayments(){
     }
 
     setSelectedInvoice({ actividad: actividadAsociada, pago: nuevoPago })
-    setFeedback({ type: 'success', message: 'Pago registrado correctamente. Se actualizó el estado a pagado.' })
-    setForm(defaultForm)
+    setToast({ type: 'success', message: '✅ Pago registrado correctamente' })
+    setFeedback({ type: '', message: '' })
+    setForm(createDefaultForm())
     setSaving(false)
     fetchPayments()
   }
@@ -343,6 +410,13 @@ export default function AdminPayments(){
 
   return (
     <div className="admin-page">
+      {toast && (
+        <div className={`admin-toast admin-toast--${toast.type}`} role="status">
+          <span>{toast.message}</span>
+          <button type="button" onClick={() => setToast(null)} aria-label="Cerrar notificación">×</button>
+        </div>
+      )}
+
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
         <div className="admin-section flex-1 space-y-4">
           <header className="admin-header">
@@ -358,29 +432,47 @@ export default function AdminPayments(){
               <span className="font-medium text-slate-700">Selecciona una reserva</span>
               <select
                 value={form.idactividad}
-                onChange={event => updateField('idactividad', event.target.value)}
-                className="border rounded-xl2 px-3 py-2"
+                onChange={event => handleSelectActivity(event.target.value)}
+                className="admin-field-select"
               >
-                <option value="">Reservas sin pago registrado</option>
-                {activitiesWithoutPayment.map(actividad => {
+                <option value="">Selecciona una actividad</option>
+                {activities.map(actividad => {
                   const fecha = actividad.agendaFecha
                     ? new Date(actividad.agendaFecha).toLocaleDateString('es-GT')
                     : 'Sin fecha'
+                  const hasPago = paymentsByActivity.has(Number(actividad.id))
                   return (
                     <option key={actividad.id} value={actividad.id}>
-                      #{actividad.id} — {actividad.cliente} ({actividad.paquete}, {fecha})
+                      #{actividad.id} — {actividad.cliente} ({actividad.paquete}, {fecha}) {hasPago ? '• Pago existente' : ''}
                     </option>
                   )
                 })}
               </select>
             </label>
 
+            {hasPreviousPayment && (
+              <p className="admin-field-hint">
+                Esta reserva ya tiene {existingPaymentsForSelected.length} pago(s) registrado(s). Activa la casilla de abono para añadir otro.
+              </p>
+            )}
+
+            {hasPreviousPayment && (
+              <label className="admin-checkbox">
+                <input
+                  type="checkbox"
+                  checked={form.esAbono}
+                  onChange={event => updateField('esAbono', event.target.checked)}
+                />
+                <span>Registrar como abono</span>
+              </label>
+            )}
+
             <label className="grid gap-1 text-sm">
               <span className="font-medium text-slate-700">Método de pago</span>
               <select
                 value={form.metodo}
                 onChange={event => updateField('metodo', event.target.value)}
-                className="border rounded-xl2 px-3 py-2"
+                className="admin-field-select"
               >
                 {PAYMENT_METHODS.map(metodo => (
                   <option key={metodo.value} value={metodo.value}>{metodo.label}</option>
@@ -388,14 +480,35 @@ export default function AdminPayments(){
               </select>
             </label>
 
+            <div className="grid gap-3 sm:grid-cols-2">
+              <AdminDatePicker
+                label="Fecha del pago"
+                value={form.fechaPago}
+                onChange={(date) => updateField('fechaPago', Array.isArray(date) ? date[0] ?? null : date)}
+                isClearable={false}
+              />
+              <label className="grid gap-1 text-sm">
+                <span className="font-medium text-slate-700">Hora</span>
+                <input
+                  type="time"
+                  value={form.horaPago}
+                  onChange={event => updateField('horaPago', event.target.value)}
+                  className="admin-field-input"
+                />
+              </label>
+            </div>
+
             <label className="grid gap-1 text-sm">
               <span className="font-medium text-slate-700">Monto cobrado (Q)</span>
               <input
                 value={form.monto}
                 onChange={event => updateField('monto', event.target.value)}
-                className="border rounded-xl2 px-3 py-2"
+                className="admin-field-input"
                 placeholder="Ej. 1800"
                 inputMode="decimal"
+                type="number"
+                min="0"
+                step="0.01"
               />
             </label>
 
@@ -404,7 +517,7 @@ export default function AdminPayments(){
               <textarea
                 value={form.detalle}
                 onChange={event => updateField('detalle', event.target.value)}
-                className="border rounded-xl2 px-3 py-2"
+                className="admin-field-textarea"
                 rows={2}
                 placeholder="Número de recibo o nota interna"
               />
@@ -414,9 +527,7 @@ export default function AdminPayments(){
               {saving ? 'Registrando…' : 'Registrar pago'}
             </button>
             {feedback.message && (
-              <p className={`text-sm ${feedback.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
-                {feedback.message}
-              </p>
+              <p className={`admin-feedback admin-feedback--${feedback.type}`}>{feedback.message}</p>
             )}
           </form>
         </div>
@@ -442,7 +553,7 @@ export default function AdminPayments(){
           <label className="grid gap-1 text-sm">
             <span className="font-medium text-slate-700">Buscar</span>
             <input
-              className="border rounded-xl2 px-3 py-2"
+              className="admin-field-input"
               placeholder="Cliente o paquete"
               value={filters.search}
               onChange={event => updateFilter('search', event.target.value)}
@@ -452,7 +563,7 @@ export default function AdminPayments(){
           <label className="grid gap-1 text-sm">
             <span className="font-medium text-slate-700">Método de pago</span>
             <select
-              className="border rounded-xl2 px-3 py-2"
+              className="admin-field-select"
               value={filters.metodo}
               onChange={event => updateFilter('metodo', event.target.value)}
             >
