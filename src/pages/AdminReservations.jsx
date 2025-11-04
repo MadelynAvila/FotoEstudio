@@ -2,30 +2,31 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import AdminHelpCard from '../components/AdminHelpCard'
 
-const ESTADOS = ['pendiente', 'confirmada', 'en progreso', 'pagado', 'completada', 'cancelada']
-
-const defaultForm = {
-  nombre: '',
-  telefono: '',
-  comentarios: '',
-  fecha: '',
-  horaInicio: '',
-  horaFin: '',
-  ubicacion: '',
-  estado: 'pendiente',
-  paqueteId: ''
+const estadoColorStyles = {
+  pendiente: { bg: '#FFF8E1', text: '#8A6D3B' },
+  reservada: { bg: '#E4DDCC', text: '#5B4636' },
+  'en progreso': { bg: '#DDE8E8', text: '#2F4F4F' },
+  'en edicion': { bg: '#E5D8F0', text: '#4C2B68' },
+  impresion: { bg: '#F5EDE3', text: '#5B4636' },
+  lista: { bg: '#F2E8DA', text: '#5B4636' },
+  entregada: { bg: '#E6F4EA', text: '#2F6B3F' }
 }
 
-function formatearHoraParaDB(value) {
-  if (!value) return null
-  const [horas = '00', minutos = '00'] = String(value).split(':')
-  return `${horas.padStart(2, '0')}:${minutos.padStart(2, '0')}:00`
+const defaultFilters = {
+  search: '',
+  estado: 'all',
+  fotografo: 'all',
+  fecha: ''
 }
 
-function formatEstado(value) {
-  if (!value) return 'Pendiente'
-  const lower = value.toLowerCase()
-  return lower.charAt(0).toUpperCase() + lower.slice(1)
+function normalize(value) {
+  if (!value) return ''
+  return value
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[^a-z0-9\s]/g, '')
 }
 
 function formatDate(value) {
@@ -50,377 +51,464 @@ function formatTimeRange(inicio, fin) {
   return `${formatTime(inicio)} – ${formatTime(fin)}`
 }
 
+function getEstadoStyles(nombre) {
+  const key = normalize(nombre)
+  return estadoColorStyles[key] || { bg: '#EEE0D1', text: '#5B4636' }
+}
+
 export default function AdminReservations() {
   const [reservas, setReservas] = useState([])
-  const [paquetes, setPaquetes] = useState([])
-  const [form, setForm] = useState(defaultForm)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const [estados, setEstados] = useState([])
+  const [filters, setFilters] = useState(defaultFilters)
+  const [selection, setSelection] = useState({})
   const [feedback, setFeedback] = useState({ type: '', message: '' })
-  const [rolClienteId, setRolClienteId] = useState(null)
-  const [rolFotografoId, setRolFotografoId] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [updatingId, setUpdatingId] = useState(null)
 
-  const fetchData = async ({ preserveFeedback = false } = {}) => {
+  const reservadaEstadoId = useMemo(() => {
+    const estado = estados.find(item => normalize(item?.nombre_estado) === 'reservada')
+    return estado?.id ?? null
+  }, [estados])
+
+  const loadReservas = async () => {
     setLoading(true)
-    if (!preserveFeedback) setFeedback({ type: '', message: '' })
+    setFeedback({ type: '', message: '' })
 
-    const [actividadesRes, paquetesRes, rolesRes] = await Promise.all([
+    const [actividadesRes, estadosRes] = await Promise.all([
       supabase
         .from('actividad')
-        .select('id, idusuario, idagenda, idpaquete, estado_pago, nombre_actividad, ubicacion')
+        .select('id, idusuario, idagenda, idpaquete, idestado_actividad, estado_pago')
         .order('id', { ascending: false }),
       supabase
-        .from('paquete')
-        .select('id, nombre_paquete')
-        .order('nombre_paquete', { ascending: true }),
-      supabase
-        .from('rol')
-        .select('id, nombre')
+        .from('estado_actividad')
+        .select('id, nombre_estado, orden')
+        .order('orden', { ascending: true })
     ])
 
-    const errors = [actividadesRes.error, paquetesRes.error, rolesRes.error].filter(Boolean)
+    const errors = [actividadesRes.error, estadosRes.error].filter(Boolean)
     if (errors.length) {
       errors.forEach(err => console.error('Error cargando reservas', err))
       setReservas([])
-      setPaquetes([])
-      setFeedback({ type: 'error', message: 'Error cargando datos desde Supabase.' })
+      setEstados([])
+      setSelection({})
+      setFeedback({ type: 'error', message: 'No se pudieron cargar las reservas. Intenta nuevamente.' })
       setLoading(false)
       return
     }
 
     const actividades = actividadesRes.data ?? []
-    const agendaIds = Array.from(new Set(actividades.map(item => item.idagenda).filter(Boolean)))
-    const clienteIds = Array.from(new Set(actividades.map(item => item.idusuario).filter(Boolean)))
+    const estadosData = estadosRes.data ?? []
 
-    const { data: agendasData = [] } = agendaIds.length
-      ? await supabase.from('agenda').select('id, fecha, horainicio, horafin, idfotografo').in('id', agendaIds)
-      : { data: [] }
+    const agendaIds = Array.from(new Set(actividades.map(item => item.idagenda).filter(Boolean)))
+    const paqueteIds = Array.from(new Set(actividades.map(item => item.idpaquete).filter(Boolean)))
+    const clienteIds = actividades.map(item => item.idusuario).filter(Boolean)
+
+    const [{ data: agendasData = [], error: agendaError }, { data: paquetesData = [], error: paquetesError }] = await Promise.all([
+      agendaIds.length
+        ? supabase.from('agenda').select('id, fecha, horainicio, horafin, idfotografo').in('id', agendaIds)
+        : Promise.resolve({ data: [], error: null }),
+      paqueteIds.length
+        ? supabase.from('paquete').select('id, nombre_paquete').in('id', paqueteIds)
+        : Promise.resolve({ data: [], error: null })
+    ])
+
+    const errorsSecundarios = [agendaError, paquetesError].filter(Boolean)
+    if (errorsSecundarios.length) errorsSecundarios.forEach(err => console.error('Error cargando datos relacionados', err))
 
     const fotografoIds = Array.from(new Set((agendasData ?? []).map(a => a.idfotografo).filter(Boolean)))
     const usuarioIds = Array.from(new Set([...clienteIds, ...fotografoIds]))
 
-    const { data: usuariosData = [] } = usuarioIds.length
-      ? await supabase.from('usuario').select('id, username, telefono').in('id', usuarioIds)
-      : { data: [] }
+    const { data: usuariosData = [], error: usuariosError } = usuarioIds.length
+      ? await supabase.from('usuario').select('id, username').in('id', usuarioIds)
+      : { data: [], error: null }
 
-    const agendaMap = new Map((agendasData ?? []).map(a => [a.id, a]))
-    const usuarioMap = new Map((usuariosData ?? []).map(u => [u.id, u]))
-    const paqueteMap = new Map((paquetesRes.data ?? []).map(p => [p.id, p.nombre_paquete]))
+    if (usuariosError) console.error('Error cargando usuarios relacionados', usuariosError)
 
-    const formatted = actividades.map(item => {
+    const agendaMap = new Map((agendasData ?? []).map(agenda => [agenda.id, agenda]))
+    const paqueteMap = new Map((paquetesData ?? []).map(paquete => [paquete.id, paquete]))
+    const usuarioMap = new Map((usuariosData ?? []).map(usuario => [usuario.id, usuario]))
+    const estadoMap = new Map((estadosData ?? []).map(estado => [estado.id, estado]))
+
+    const formattedReservas = actividades.map(item => {
       const agenda = agendaMap.get(item.idagenda)
       const cliente = usuarioMap.get(item.idusuario)
       const fotografo = agenda ? usuarioMap.get(agenda.idfotografo) : null
+      const paquete = paqueteMap.get(item.idpaquete)
+      const estado = estadoMap.get(item.idestado_actividad)
+
       return {
         id: item.id,
-        nombre: cliente?.username || 'Cliente sin nombre',
-        telefono: cliente?.telefono || '—',
-        comentarios: item.nombre_actividad || '',
-        fecha: agenda?.fecha,
-        horaInicio: agenda?.horainicio,
-        horaFin: agenda?.horafin,
+        clienteId: cliente?.id ?? null,
+        cliente: cliente?.username || 'Cliente sin nombre',
+        fotografoId: fotografo?.id ?? null,
         fotografo: fotografo?.username || 'Sin asignar',
-        fotografoTelefono: fotografo?.telefono || '—',
-        ubicacion: item.ubicacion || 'No especificada',
-        estado: (item.estado_pago || 'pendiente').toLowerCase(),
-        paquete: paqueteMap.get(item.idpaquete) || 'Paquete sin asignar'
+        paquete: paquete?.nombre_paquete || 'Paquete sin asignar',
+        fecha: agenda?.fecha || null,
+        horaInicio: agenda?.horainicio || null,
+        horaFin: agenda?.horafin || null,
+        estadoId: item.idestado_actividad ?? null,
+        estadoNombre: estado?.nombre_estado || 'Pendiente',
+        estadoPago: item.estado_pago || 'Pendiente',
+        agendaId: item.idagenda || null
       }
     })
 
-    const rolCliente = rolesRes.data?.find(r => r.nombre?.toLowerCase() === 'cliente')
-    const rolFotografo = rolesRes.data?.find(r => r.nombre?.toLowerCase().includes('fotografo'))
-    setRolClienteId(rolCliente?.id ?? null)
-    setRolFotografoId(rolFotografo?.id ?? null)
-    setReservas(formatted)
-    setPaquetes(paquetesRes.data ?? [])
+    setEstados(estadosData)
+    setReservas(formattedReservas)
+    setSelection(
+      Object.fromEntries(
+        formattedReservas.map(reserva => [reserva.id, reserva.estadoId ? String(reserva.estadoId) : ''])
+      )
+    )
     setLoading(false)
   }
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => {
+    loadReservas()
+  }, [])
 
-  const updateField = (field, value) => {
-    setForm(prev => ({ ...prev, [field]: value }))
-    setFeedback({ type: '', message: '' })
+  const filteredReservas = useMemo(() => {
+    const searchTerm = normalize(filters.search)
+    return reservas.filter(reserva => {
+      const matchesSearch =
+        !searchTerm ||
+        normalize(reserva.cliente).includes(searchTerm) ||
+        String(reserva.id).includes(filters.search.trim())
+
+      const matchesEstado =
+        filters.estado === 'all' || String(reserva.estadoId ?? '') === String(filters.estado)
+
+      const matchesFotografo =
+        filters.fotografo === 'all' || String(reserva.fotografoId ?? '') === String(filters.fotografo)
+
+      const matchesFecha =
+        !filters.fecha ||
+        (reserva.fecha && new Date(reserva.fecha).toISOString().startsWith(filters.fecha))
+
+      return matchesSearch && matchesEstado && matchesFotografo && matchesFecha
+    })
+  }, [reservas, filters])
+
+  const fotografoOptions = useMemo(() => {
+    const unique = new Map()
+    reservas.forEach(reserva => {
+      if (reserva.fotografoId) unique.set(reserva.fotografoId, reserva.fotografo)
+    })
+    return Array.from(unique.entries()).map(([id, nombre]) => ({ id, nombre }))
+  }, [reservas])
+
+  const onFilterChange = (field, value) => {
+    setFilters(prev => ({ ...prev, [field]: value }))
   }
 
-  const resetForm = () => setForm(defaultForm)
+  const onSelectEstado = (reservaId, value) => {
+    setSelection(prev => ({ ...prev, [reservaId]: value }))
+  }
 
-  const reservasPendientes = useMemo(() => reservas.filter(r => r.estado === 'pendiente'), [reservas])
+  const actualizarEstado = async reserva => {
+    const nuevoEstadoId = Number(selection[reserva.id])
+    if (!nuevoEstadoId || nuevoEstadoId === reserva.estadoId) return
 
-  const onSubmit = async e => {
-    e.preventDefault()
+    const estadoActual = normalize(reserva.estadoNombre)
+    if (estadoActual === 'entregada') {
+      setFeedback({ type: 'warning', message: 'Las reservas entregadas no pueden modificarse.' })
+      return
+    }
+
+    setUpdatingId(reserva.id)
     setFeedback({ type: '', message: '' })
 
-    if (!form.nombre || !form.fecha || !form.paqueteId || !form.horaInicio || !form.horaFin || !form.ubicacion) {
-      setFeedback({ type: 'error', message: 'Todos los campos obligatorios deben completarse.' })
-      return
+    const payload = { idestado_actividad: nuevoEstadoId }
+    if (reservadaEstadoId && nuevoEstadoId === Number(reservadaEstadoId)) {
+      payload.estado_pago = 'Confirmado'
     }
 
-    setSaving(true)
+    const { error } = await supabase.from('actividad').update(payload).eq('id', reserva.id)
 
-    // Verificar si el usuario ya existe
-    const { data: usuarioExistente } = await supabase
-      .from('usuario')
-      .select('id, telefono, idrol')
-      .eq('username', form.nombre)
-      .maybeSingle()
-
-    let usuarioId = usuarioExistente?.id ?? null
-
-    if (!usuarioId) {
-      const { data: usuarioData, error: usuarioError } = await supabase
-        .from('usuario')
-        .insert([{ username: form.nombre, telefono: form.telefono || null, idrol: rolClienteId }])
-        .select('id')
-        .single()
-
-      if (usuarioError || !usuarioData) {
-        setFeedback({ type: 'error', message: 'Error registrando al cliente.' })
-        setSaving(false)
-        return
-      }
-      usuarioId = usuarioData.id
-    }
-
-    const { data: clienteExistente } = await supabase
-      .from('cliente')
-      .select('idcliente, idusuario')
-      .eq('idusuario', usuarioId)
-      .maybeSingle()
-
-    let clienteData = clienteExistente
-
-    if (!clienteData) {
-      const { data: nuevoClienteData, error: clienteError } = await supabase
-        .from('cliente')
-        .insert([{ idusuario: usuarioId, Descuento: 0 }])
-        .select('idcliente, idusuario')
-        .single()
-
-      if (clienteError) {
-        setFeedback({ type: 'error', message: 'Error asociando la reserva al cliente.' })
-        setSaving(false)
-        return
-      }
-
-      clienteData = nuevoClienteData
-    }
-
-    const { data: fotografoData } = await supabase
-      .from('usuario')
-      .select('id')
-      .eq('idrol', rolFotografoId)
-      .limit(1)
-      .maybeSingle()
-
-    const fotografoAsignado = fotografoData?.id
-    if (!fotografoAsignado) {
-      setFeedback({ type: 'error', message: 'No hay fotógrafos disponibles.' })
-      setSaving(false)
-      return
-    }
-
-    const agendaPayload = {
-      idfotografo: fotografoAsignado,
-      fecha: form.fecha,
-      horainicio: formatearHoraParaDB(form.horaInicio),
-      horafin: formatearHoraParaDB(form.horaFin),
-      disponible: false
-    }
-
-    const { data: agendaData, error: agendaError } = await supabase
-      .from('agenda')
-      .insert([agendaPayload])
-      .select('id')
-      .single()
-
-    if (agendaError || !agendaData) {
-      setFeedback({ type: 'error', message: 'Error creando la agenda de la reserva.' })
-      setSaving(false)
-      return
-    }
-
-    const nombrePaquete = paquetes.find(p => String(p.id) === String(form.paqueteId))?.nombre_paquete
-    const nombreActividad = form.comentarios || (nombrePaquete ? `Reserva para ${nombrePaquete}` : 'Reserva desde el panel de administración')
-
-    const { error: actividadError } = await supabase
-      .from('actividad')
-      .insert([
-        {
-          idusuario: clienteData?.idusuario ?? usuarioId,
-          idagenda: agendaData.id,
-          idpaquete: Number(form.paqueteId),
-          estado_pago: formatEstado(form.estado),
-          nombre_actividad: nombreActividad,
-          ubicacion: form.ubicacion
-        }
-      ])
-
-    if (actividadError) {
-      setFeedback({ type: 'error', message: 'Error creando la reserva.' })
+    if (error) {
+      console.error('Error actualizando estado', error)
+      setFeedback({ type: 'error', message: 'No se pudo actualizar el estado. Intenta de nuevo.' })
     } else {
-      setFeedback({ type: 'success', message: 'Reserva creada correctamente.' })
-      resetForm()
-      await fetchData({ preserveFeedback: true })
+      const estadoActualizado = estados.find(item => Number(item.id) === nuevoEstadoId)
+      setSelection(prev => ({ ...prev, [reserva.id]: String(nuevoEstadoId) }))
+      setReservas(prev =>
+        prev.map(item =>
+          item.id === reserva.id
+            ? {
+                ...item,
+                estadoId: nuevoEstadoId,
+                estadoNombre: estadoActualizado?.nombre_estado || item.estadoNombre,
+                estadoPago:
+                  reservadaEstadoId && nuevoEstadoId === Number(reservadaEstadoId)
+                    ? 'Confirmado'
+                    : item.estadoPago
+              }
+            : item
+        )
+      )
+      setFeedback({ type: 'success', message: 'Estado actualizado correctamente.' })
     }
 
-    setSaving(false)
-  }
-
-  const onEstadoChange = async (id, nuevoEstado) => {
-    const estadoNormalizado = formatEstado(nuevoEstado)
-    const { error } = await supabase.from('actividad').update({ estado_pago: estadoNormalizado }).eq('id', id)
-    if (error) setFeedback({ type: 'error', message: 'Error actualizando estado.' })
-    else setReservas(prev => prev.map(r => (r.id === id ? { ...r, estado: nuevoEstado } : r)))
+    setUpdatingId(null)
   }
 
   return (
-    <div className="admin-page">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-        <div className="admin-section flex-1 space-y-4">
-          <header className="admin-header">
-            <div>
-              <h1 className="text-xl font-semibold text-umber">Gestión de reservas</h1>
-              <p className="muted text-sm">Registra nuevas solicitudes y da seguimiento a las existentes.</p>
-            </div>
-            <button type="button" onClick={resetForm} className="btn btn-ghost">Limpiar formulario</button>
-          </header>
+    <div className="admin-page space-y-6">
+      <div className="admin-section space-y-4">
+        <header className="admin-header">
+          <div>
+            <h1 className="text-xl font-semibold text-umber">Gestión de reservas</h1>
+            <p className="muted text-sm">Administra el estado de cada actividad y mantén al equipo alineado.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={loadReservas} className="btn btn-ghost" disabled={loading}>
+              {loading ? 'Actualizando…' : 'Actualizar datos'}
+            </button>
+          </div>
+        </header>
 
-          <form onSubmit={onSubmit} className="grid gap-3 md:grid-cols-2">
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium text-slate-700">Nombre del cliente *</span>
-              <input value={form.nombre} onChange={e => updateField('nombre', e.target.value)} className="border rounded-xl2 px-3 py-2" placeholder="Ej. Juan Pérez" />
-            </label>
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium text-slate-700">Teléfono</span>
-              <input value={form.telefono} onChange={e => updateField('telefono', e.target.value)} className="border rounded-xl2 px-3 py-2" placeholder="5555-5555" />
-            </label>
-            <label className="grid gap-1 text-sm md:col-span-2">
-              <span className="font-medium text-slate-700">Comentarios</span>
-              <textarea value={form.comentarios} onChange={e => updateField('comentarios', e.target.value)} className="border rounded-xl2 px-3 py-2 min-h-[100px]" placeholder="Detalles adicionales, paquete solicitado, etc." />
-            </label>
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium text-slate-700">Fecha solicitada *</span>
-              <input type="date" value={form.fecha} onChange={e => updateField('fecha', e.target.value)} className="border rounded-xl2 px-3 py-2" />
-            </label>
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium text-slate-700">Hora de inicio *</span>
-              <input type="time" value={form.horaInicio} onChange={e => updateField('horaInicio', e.target.value)} className="border rounded-xl2 px-3 py-2" />
-            </label>
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium text-slate-700">Hora de fin *</span>
-              <input type="time" value={form.horaFin} onChange={e => updateField('horaFin', e.target.value)} className="border rounded-xl2 px-3 py-2" />
-            </label>
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium text-slate-700">Paquete *</span>
-              <select value={form.paqueteId} onChange={e => updateField('paqueteId', e.target.value)} className="border rounded-xl2 px-3 py-2">
-                <option value="">Selecciona un paquete</option>
-                {paquetes.map(p => <option key={p.id} value={p.id}>{p.nombre_paquete}</option>)}
-              </select>
-            </label>
-            <label className="grid gap-1 text-sm md:col-span-2">
-              <span className="font-medium text-slate-700">Ubicación *</span>
-              <input value={form.ubicacion} onChange={e => updateField('ubicacion', e.target.value)} className="border rounded-xl2 px-3 py-2" placeholder="Dirección o referencia" />
-            </label>
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium text-slate-700">Estado</span>
-              <select value={form.estado} onChange={e => updateField('estado', e.target.value)} className="border rounded-xl2 px-3 py-2">
-                {ESTADOS.map(estado => <option key={estado} value={estado}>{formatEstado(estado)}</option>)}
-              </select>
-            </label>
-            <div className="md:col-span-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <button className="btn btn-primary" disabled={saving}>{saving ? 'Guardando…' : 'Guardar reserva'}</button>
-              {feedback.message && <p className={`text-sm ${feedback.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>{feedback.message}</p>}
-            </div>
-          </form>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <label className="grid gap-1 text-sm">
+            <span className="font-medium text-slate-700">Búsqueda rápida</span>
+            <input
+              className="border rounded-xl2 px-3 py-2"
+              placeholder="Cliente o ID de reserva"
+              value={filters.search}
+              onChange={event => onFilterChange('search', event.target.value)}
+            />
+          </label>
+
+          <label className="grid gap-1 text-sm">
+            <span className="font-medium text-slate-700">Filtrar por estado</span>
+            <select
+              className="border rounded-xl2 px-3 py-2"
+              value={filters.estado}
+              onChange={event => onFilterChange('estado', event.target.value)}
+            >
+              <option value="all">Todos los estados</option>
+              {estados.map(estado => (
+                <option key={estado.id} value={estado.id}>
+                  {estado.nombre_estado}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-1 text-sm">
+            <span className="font-medium text-slate-700">Filtrar por fotógrafo</span>
+            <select
+              className="border rounded-xl2 px-3 py-2"
+              value={filters.fotografo}
+              onChange={event => onFilterChange('fotografo', event.target.value)}
+            >
+              <option value="all">Todos los fotógrafos</option>
+              {fotografoOptions.map(option => (
+                <option key={option.id} value={option.id}>
+                  {option.nombre}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-1 text-sm">
+            <span className="font-medium text-slate-700">Filtrar por fecha</span>
+            <input
+              type="date"
+              className="border rounded-xl2 px-3 py-2"
+              value={filters.fecha}
+              onChange={event => onFilterChange('fecha', event.target.value)}
+            />
+          </label>
         </div>
 
-        <div className="lg:w-[320px]">
-          <AdminHelpCard title="Sugerencias para seguimiento">
-            <p>Confirma rápidamente las reservas pendientes para mejorar la experiencia de tus clientes.</p>
-            <p>Usa los estados para coordinar tareas internas y mantener al equipo informado.</p>
-            <p>Agrega comentarios con detalles relevantes como locaciones o requerimientos especiales.</p>
-          </AdminHelpCard>
-        </div>
+        {feedback.message && (
+          <div
+            className={`rounded-3xl px-4 py-3 text-sm ${
+              feedback.type === 'error'
+                ? 'bg-red-50 text-red-700 border border-red-100'
+                : feedback.type === 'success'
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                : 'bg-amber-50 text-amber-700 border border-amber-100'
+            }`}
+          >
+            {feedback.message}
+          </div>
+        )}
       </div>
 
-      <div className="admin-section">
+      <div className="admin-section space-y-4">
         <div className="admin-header">
           <div>
             <h2 className="text-lg font-semibold text-umber">Reservas registradas</h2>
-            <p className="muted text-sm">Lista consolidada de actividades con asignación de fotógrafo.</p>
+            <p className="muted text-sm">Visualiza y actualiza el estado de cada actividad.</p>
           </div>
-          <span className="text-xs uppercase tracking-[0.3em] text-slate-500">{reservas.length} registros</span>
+          <span className="text-xs uppercase tracking-[0.3em] text-slate-500">{filteredReservas.length} registros</span>
         </div>
+
         {loading ? (
           <p className="muted text-sm">Cargando reservas…</p>
-        ) : reservas.length ? (
-          <div className="table-responsive">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th className="p-2">Cliente</th>
-                  <th className="p-2">Teléfono</th>
-                  <th className="p-2">Paquete</th>
-                  <th className="p-2">Fecha</th>
-                  <th className="p-2">Horario</th>
-                  <th className="p-2">Fotógrafo</th>
-                  <th className="p-2">Ubicación</th>
-                  <th className="p-2">Estado</th>
-                  <th className="p-2">Comentarios</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reservas.map(reserva => (
-                  <tr key={reserva.id}>
-                    <td className="p-2 font-medium text-slate-700">{reserva.nombre}</td>
-                    <td className="p-2">{reserva.telefono}</td>
-                    <td className="p-2">{reserva.paquete}</td>
-                    <td className="p-2">{formatDate(reserva.fecha)}</td>
-                    <td className="p-2">{formatTimeRange(reserva.horaInicio, reserva.horaFin)}</td>
-                    <td className="p-2">
-                      <div>{reserva.fotografo}</div>
-                      <div className="text-xs text-slate-500">{reserva.fotografoTelefono}</div>
-                    </td>
-                    <td className="p-2 text-slate-600">{reserva.ubicacion}</td>
-                    <td className="p-2">
-                      <select value={reserva.estado} onChange={e => onEstadoChange(reserva.id, e.target.value)} className="border rounded-xl2 px-2 py-1">
-                        {ESTADOS.map(estado => <option key={estado} value={estado}>{formatEstado(estado)}</option>)}
-                      </select>
-                    </td>
-                    <td className="p-2 text-slate-600 whitespace-pre-line">{reserva.comentarios || 'Sin comentarios'}</td>
+        ) : filteredReservas.length ? (
+          <>
+            <div className="hidden md:block table-responsive">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th className="p-2">ID</th>
+                    <th className="p-2">Cliente</th>
+                    <th className="p-2">Fotógrafo</th>
+                    <th className="p-2">Paquete</th>
+                    <th className="p-2">Fecha</th>
+                    <th className="p-2">Horario</th>
+                    <th className="p-2">Estado actual</th>
+                    <th className="p-2">Actualizar estado</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {filteredReservas.map(reserva => {
+                    const estadoStyles = getEstadoStyles(reserva.estadoNombre)
+                    const estadoActual = normalize(reserva.estadoNombre)
+                    const entregada = estadoActual === 'entregada'
+                    const selectedValue = selection[reserva.id] ?? ''
+                    const hasSelection = selectedValue !== ''
+                    const sameEstado =
+                      hasSelection && reserva.estadoId != null && Number(selectedValue) === Number(reserva.estadoId)
+                    const disableAction = entregada || updatingId === reserva.id
+
+                    return (
+                      <tr key={reserva.id} className="align-top">
+                        <td className="p-2 font-medium text-slate-700">#{reserva.id}</td>
+                        <td className="p-2">
+                          <div className="font-medium text-slate-700">{reserva.cliente}</div>
+                          <div className="text-xs text-slate-500">Agenda #{reserva.agendaId ?? '—'}</div>
+                        </td>
+                        <td className="p-2 text-slate-600">{reserva.fotografo}</td>
+                        <td className="p-2 text-slate-600">{reserva.paquete}</td>
+                        <td className="p-2 text-slate-600">{formatDate(reserva.fecha)}</td>
+                        <td className="p-2 text-slate-600">{formatTimeRange(reserva.horaInicio, reserva.horaFin)}</td>
+                        <td className="p-2">
+                          <span
+                            className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em]"
+                            style={{ backgroundColor: estadoStyles.bg, color: estadoStyles.text }}
+                          >
+                            {reserva.estadoNombre}
+                          </span>
+                        </td>
+                        <td className="p-2">
+                          <div className="flex flex-col gap-2">
+                            <select
+                              className="border rounded-xl2 px-2 py-1 text-sm"
+                              value={selectedValue}
+                              onChange={event => onSelectEstado(reserva.id, event.target.value)}
+                              disabled={entregada}
+                            >
+                              <option value="">Selecciona un estado</option>
+                              {estados.map(estado => (
+                                <option key={estado.id} value={estado.id}>
+                                  {estado.nombre_estado}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              onClick={() => actualizarEstado(reserva)}
+                              disabled={disableAction || !hasSelection || sameEstado}
+                            >
+                              {updatingId === reserva.id ? 'Guardando…' : 'Confirmar cambio'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-3 md:hidden">
+              {filteredReservas.map(reserva => {
+                const estadoStyles = getEstadoStyles(reserva.estadoNombre)
+                const estadoActual = normalize(reserva.estadoNombre)
+                const entregada = estadoActual === 'entregada'
+                const selectedValue = selection[reserva.id] ?? ''
+                const hasSelection = selectedValue !== ''
+                const sameEstado =
+                  hasSelection && reserva.estadoId != null && Number(selectedValue) === Number(reserva.estadoId)
+                const disableAction = entregada || updatingId === reserva.id
+
+                return (
+                  <div key={reserva.id} className="card border border-[var(--border)] p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-umber">Reserva #{reserva.id}</p>
+                        <p className="text-sm text-slate-600">{reserva.cliente}</p>
+                        <p className="text-xs text-slate-500">Agenda #{reserva.agendaId ?? '—'}</p>
+                      </div>
+                      <span
+                        className="inline-flex items-center rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]"
+                        style={{ backgroundColor: estadoStyles.bg, color: estadoStyles.text }}
+                      >
+                        {reserva.estadoNombre}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
+                      <div>
+                        <p className="font-semibold text-slate-700">Fotógrafo</p>
+                        <p>{reserva.fotografo}</p>
+                      </div>
+                      <div>
+                        <p className="font-semibold text-slate-700">Paquete</p>
+                        <p>{reserva.paquete}</p>
+                      </div>
+                      <div>
+                        <p className="font-semibold text-slate-700">Fecha</p>
+                        <p>{formatDate(reserva.fecha)}</p>
+                      </div>
+                      <div>
+                        <p className="font-semibold text-slate-700">Horario</p>
+                        <p>{formatTimeRange(reserva.horaInicio, reserva.horaFin)}</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <select
+                        className="border rounded-xl2 px-3 py-2 text-sm"
+                        value={selectedValue}
+                        onChange={event => onSelectEstado(reserva.id, event.target.value)}
+                        disabled={entregada}
+                      >
+                        <option value="">Selecciona un estado</option>
+                        {estados.map(estado => (
+                          <option key={estado.id} value={estado.id}>
+                            {estado.nombre_estado}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => actualizarEstado(reserva)}
+                        disabled={disableAction || !hasSelection || sameEstado}
+                      >
+                        {updatingId === reserva.id ? 'Guardando…' : 'Confirmar cambio'}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </>
         ) : (
-          <p className="muted text-sm">Todavía no hay reservas registradas.</p>
+          <p className="muted text-sm">No hay reservas que coincidan con los filtros seleccionados.</p>
         )}
       </div>
 
       <div className="admin-section">
-        <div className="admin-header">
-          <h2 className="text-lg font-semibold text-umber">Reservas pendientes</h2>
-          <span className="text-xs uppercase tracking-[0.3em] text-slate-500">{reservasPendientes.length}</span>
-        </div>
-        {reservasPendientes.length ? (
-          <ul className="space-y-2 text-sm">
-            {reservasPendientes.map(r => (
-              <li key={r.id} className="card border border-[var(--border)] p-3">
-                <strong>{r.nombre}</strong> — {r.paquete}
-                <div className="text-xs text-slate-500">
-                  {formatDate(r.fecha)} · {formatTimeRange(r.horaInicio, r.horaFin)}
-                </div>
-                <div className="text-xs text-slate-500">Fotógrafo: {r.fotografo}</div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted text-sm">No tienes reservas pendientes en este momento.</p>
-        )}
+        <AdminHelpCard title="Consejos de seguimiento">
+          <p>Aprovecha los filtros para coordinar rápidamente las actividades pendientes.</p>
+          <p>Confirma las reservas recién aprobadas para notificar a tu cliente y equipo.</p>
+          <p>Una vez marcada como entregada, la reserva queda bloqueada para mantener el historial.</p>
+        </AdminHelpCard>
       </div>
     </div>
   )
 }
-
