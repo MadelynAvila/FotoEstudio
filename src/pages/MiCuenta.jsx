@@ -390,42 +390,91 @@ export default function MiCuenta () {
                       Estado actual: {reserva?.estado_actividad?.nombre_estado || 'Pendiente'}
                     </span>
                   </div>
-                  <ol className="relative space-y-6 md:flex md:items-center md:space-y-0 md:gap-3">
+                  <ol className="relative flex flex-col items-center gap-6 md:flex-row md:items-stretch md:justify-between md:gap-4">
                     {pasos.map((paso, index) => {
                       const isLast = index === pasos.length - 1
                       const isCompleted = paso.status === 'completed'
                       const isCurrent = paso.status === 'current'
-                      const colorBase = isCurrent ? '#3b302a' : isCompleted ? '#c9b38a' : '#e4ddcc'
-                      const connectorColor = isCompleted || isCurrent ? 'bg-[#3b302a]' : 'bg-[#e4ddcc]'
-                      const textColor = isCurrent ? 'text-[#3b302a]' : isCompleted ? 'text-[#3b302a]' : 'text-slate-500'
+
+                      const statusStyles = {
+                        current: {
+                          container: 'bg-[#FAF8F4] border border-[#C9B38A] text-[#3B302A] shadow-[0_10px_30px_rgba(60,48,42,0.08)]',
+                          iconBg: '#3B302A',
+                          iconColor: '#FAF8F4',
+                          connector: '#C9B38A'
+                        },
+                        completed: {
+                          container: 'bg-[#3B302A] border border-[#3B302A] text-white shadow-[0_6px_20px_rgba(60,48,42,0.18)]',
+                          iconBg: '#FAF8F4',
+                          iconColor: '#3B302A',
+                          connector: '#3B302A'
+                        },
+                        upcoming: {
+                          container: 'bg-[#E4DDCC] border border-[#E4DDCC] text-[#3B302A]/80 shadow-[0_4px_16px_rgba(60,48,42,0.08)]',
+                          iconBg: '#FAF8F4',
+                          iconColor: '#3B302A',
+                          connector: '#E4DDCC'
+                        }
+                      }
+
+                      const { container, iconBg, iconColor, connector } = statusStyles[isCurrent ? 'current' : isCompleted ? 'completed' : 'upcoming']
+                      const titleClass = isCompleted
+                        ? 'text-[#FAF8F4]'
+                        : isCurrent
+                          ? 'text-[#3B302A]'
+                          : 'text-[#3B302A]/90'
+                      const descriptionClass = isCompleted
+                        ? 'text-[#FAF8F4]/80'
+                        : isCurrent
+                          ? 'text-[#3B302A]/70'
+                          : 'text-[#3B302A]/60'
 
                       return (
-                        <li key={`${paso.id}-${paso.nombre_estado}`} className="relative flex flex-col gap-3 md:flex-1 md:flex-row md:items-center">
-                          <div className="flex items-center md:flex-col md:items-center md:text-center">
-                            <div
-                              className="relative flex h-12 w-12 items-center justify-center rounded-full border-2 text-2xl transition-all duration-300"
-                              style={{
-                                backgroundColor: colorBase,
-                                borderColor: colorBase,
-                                color: isCurrent ? '#ffffff' : '#3b302a'
-                              }}
+                        <li
+                          key={`${paso.id}-${paso.nombre_estado}`}
+                          className={`group relative flex w-full max-w-xs flex-col items-center rounded-3xl px-4 py-5 text-center transition-all duration-300 hover:-translate-y-1 md:max-w-none md:flex-1 md:px-5 md:py-6 ${container}`}
+                          style={{ fontSize: 'clamp(0.9rem, 2.5vw, 1rem)' }}
+                        >
+                          <div className="flex w-full flex-col items-center gap-3 md:gap-4">
+                            <span
+                              className="flex h-14 w-14 items-center justify-center rounded-full text-3xl transition-all duration-300 group-hover:scale-105"
+                              style={{ backgroundColor: iconBg, color: iconColor }}
                             >
-                              <span>{paso.icono}</span>
-                              {isCompleted && (
-                                <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold text-[#3b302a] shadow ring-2 ring-[#c9b38a]">✓</span>
-                              )}
-                            </div>
-                            <div className="ml-3 md:ml-0 md:mt-3">
-                              <p className={`text-sm font-semibold transition-colors duration-300 ${textColor}`}>{paso.nombre_estado}</p>
+                              {paso.icono}
+                            </span>
+                            <div className="space-y-1">
+                              <p className={`font-semibold leading-tight transition-all duration-300 ${titleClass}`}>
+                                {paso.nombre_estado}
+                              </p>
                               {paso.descripcion_estado && (
-                                <p className="text-xs text-slate-500">{paso.descripcion_estado}</p>
+                                <p className={`text-[0.75rem] leading-snug transition-all duration-300 ${descriptionClass}`}>
+                                  {paso.descripcion_estado}
+                                </p>
                               )}
                             </div>
                           </div>
+                          {isCompleted && (
+                            <span className="absolute right-4 top-4 text-xs font-semibold uppercase tracking-[0.2em] text-[#FAF8F4]/80 md:right-5">
+                              Listo
+                            </span>
+                          )}
+
                           {!isLast && (
                             <>
-                              <span className={`absolute left-[23px] top-[56px] h-8 w-0.5 md:hidden ${connectorColor}`} aria-hidden="true" />
-                              <span className={`hidden h-1 flex-1 rounded-full md:block ${connectorColor}`} aria-hidden="true" />
+                              <span
+                                className="absolute left-1/2 top-full block h-12 w-0.5 -translate-x-1/2 md:hidden"
+                                style={{ backgroundColor: connector, transition: 'all 0.3s ease' }}
+                                aria-hidden="true"
+                              />
+                              <span
+                                className="absolute left-full top-1/2 hidden h-0.5 -translate-y-1/2 md:block"
+                                style={{
+                                  backgroundColor: connector,
+                                  transition: 'all 0.3s ease',
+                                  width: 'min(160px, 22vw)'
+                                }}
+                                aria-hidden="true"
+                              />
                             </>
                           )}
                         </li>
