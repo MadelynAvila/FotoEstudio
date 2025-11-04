@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
-const DEFAULT_PAGE_SIZES = [10, 25, 50, 100]
+const DEFAULT_PAGE_SIZES = [5, 10, 20, 50]
 
 const alignClassMap = {
   left: 'text-left',

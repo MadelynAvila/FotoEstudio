@@ -13,6 +13,84 @@ const defaultStats = {
   resenas: 0
 }
 
+function StatIcon({ type }) {
+  const props = { width: 28, height: 28, fill: 'none', stroke: '#3b302a', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }
+
+  switch (type) {
+    case 'reservas':
+      return (
+        <svg {...props} viewBox="0 0 24 24">
+          <rect x="3" y="4" width="18" height="16" rx="2.5" />
+          <path d="M8 2v4" />
+          <path d="M16 2v4" />
+          <path d="M3 10h18" />
+          <path d="M8 14h2" />
+          <path d="M14 14h2" />
+        </svg>
+      )
+    case 'pendientes':
+      return (
+        <svg {...props} viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 3" />
+        </svg>
+      )
+    case 'pagos':
+      return (
+        <svg {...props} viewBox="0 0 24 24">
+          <rect x="2" y="6" width="20" height="12" rx="2" />
+          <path d="M2 10h20" />
+          <path d="M7 14h.01" />
+          <path d="M12 14h5" />
+        </svg>
+      )
+    case 'clientes':
+      return (
+        <svg {...props} viewBox="0 0 24 24">
+          <circle cx="12" cy="8" r="4" />
+          <path d="M6 20c0-3.314 2.686-6 6-6s6 2.686 6 6" />
+        </svg>
+      )
+    case 'fotografos':
+      return (
+        <svg {...props} viewBox="0 0 24 24">
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path d="M9 5l1.2-2h3.6L15 5" />
+          <circle cx="12" cy="12" r="3.5" />
+        </svg>
+      )
+    case 'servicios':
+      return (
+        <svg {...props} viewBox="0 0 24 24">
+          <path d="M12 3l8 5v8l-8 5-8-5V8z" />
+          <path d="M12 12l8-4" />
+          <path d="M12 12v9" />
+          <path d="M12 12L4 8" />
+        </svg>
+      )
+    case 'paquetes':
+      return (
+        <svg {...props} viewBox="0 0 24 24">
+          <path d="M21 7l-9-4-9 4 9 4z" />
+          <path d="M3 7v10l9 4 9-4V7" />
+          <path d="M12 11v10" />
+        </svg>
+      )
+    case 'resenas':
+      return (
+        <svg {...props} viewBox="0 0 24 24">
+          <path d="M12 17l-5.5 3 1.5-6.3L3 9.5l6.5-.6L12 3l2.5 5.9 6.5.6-5 4.2L17.5 20z" />
+        </svg>
+      )
+    default:
+      return (
+        <svg {...props} viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" />
+        </svg>
+      )
+  }
+}
+
 function formatDate(value) {
   if (!value) return '—'
   const date = new Date(value)
@@ -191,30 +269,35 @@ export default function AdminDashboard(){
   }, [])
 
   const resumen = useMemo(() => ([
-    { label: 'Reservas totales', value: stats.reservas },
-    { label: 'Reservas pendientes', value: stats.pendientes },
-    { label: 'Pagos registrados', value: stats.pagos },
-    { label: 'Clientes activos', value: stats.clientes },
-    { label: 'Fotógrafos', value: stats.fotografos },
-    { label: 'Servicios', value: stats.servicios },
-    { label: 'Paquetes', value: stats.paquetes },
-    { label: 'Reseñas', value: stats.resenas }
+    { id: 'reservas', label: 'Reservas totales', value: stats.reservas },
+    { id: 'pendientes', label: 'Reservas pendientes', value: stats.pendientes },
+    { id: 'pagos', label: 'Pagos registrados', value: stats.pagos },
+    { id: 'clientes', label: 'Clientes activos', value: stats.clientes },
+    { id: 'fotografos', label: 'Fotógrafos', value: stats.fotografos },
+    { id: 'servicios', label: 'Servicios', value: stats.servicios },
+    { id: 'paquetes', label: 'Paquetes', value: stats.paquetes },
+    { id: 'resenas', label: 'Reseñas', value: stats.resenas }
   ]), [stats])
 
   return (
     <div className="admin-page">
       {error && <p className="text-red-600 text-sm">{error}</p>}
 
-      <div className="admin-columns xl:grid-cols-4">
+      <div className="admin-summary-grid">
         {resumen.map(item => (
-          <div key={item.label} className="card p-5 space-y-1">
-            <span className="muted text-xs uppercase tracking-[0.3em]">{item.label}</span>
-            <strong className="text-3xl font-semibold text-umber">{item.value}</strong>
+          <div key={item.id} className="admin-summary-card">
+            <div className="admin-summary-card__icon" aria-hidden="true">
+              <StatIcon type={item.id} />
+            </div>
+            <div className="admin-summary-card__content">
+              <span className="admin-summary-card__label">{item.label}</span>
+              <strong className="admin-summary-card__value">{item.value}</strong>
+            </div>
           </div>
         ))}
       </div>
 
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+      <div className="admin-sections">
         <div className="admin-section flex-1 space-y-6">
           <section className="space-y-3">
             <div className="admin-header">
