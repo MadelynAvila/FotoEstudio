@@ -8,6 +8,7 @@ import {
   getResenasFotografo
 } from '../lib/fotografos'
 import AdminHelpCard from '../components/AdminHelpCard'
+import AdminDataTable from '../components/AdminDataTable'
 import PhotographerDetails from '../components/PhotographerDetails'
 
 const ESTADOS = ['activo', 'inactivo']
@@ -285,6 +286,61 @@ export default function AdminPhotographers() {
     setSelectedFotografoId(fotografo.id)
   }
 
+  const photographerColumns = useMemo(
+    () => [
+      {
+        id: 'fotografo',
+        label: 'Fotógrafo',
+        render: (fotografo) => (
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-umber">{fotografo.nombrecompleto}</p>
+            <p className="text-xs text-slate-500">{fotografo.telefono || 'Sin teléfono'} • {fotografo.correo || 'Sin correo'}</p>
+            {selectedFotografoId === fotografo.id && (
+              <span className="inline-flex w-fit items-center rounded-full bg-[#e0f2f1] px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[#0f766e]">
+                Seleccionado
+              </span>
+            )}
+          </div>
+        )
+      },
+      {
+        id: 'estado',
+        label: 'Estado',
+        hideOnMobile: true,
+        render: (fotografo) => (
+          <span
+            className={`inline-flex w-fit items-center rounded-full px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.25em] ${
+              fotografo.estado === 'activo'
+                ? 'bg-[#e6f4ea] text-[#2f6b3f]'
+                : 'bg-[#f5e8e8] text-[#7f1d1d]'
+            }`}
+          >
+            {fotografo.estado === 'activo' ? 'Activo' : 'Inactivo'}
+          </span>
+        )
+      },
+      {
+        id: 'acciones',
+        label: 'Acciones',
+        align: 'right',
+        render: (fotografo) => (
+          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:justify-end">
+            <button type="button" className="btn btn-ghost" onClick={() => onViewDetails(fotografo)}>
+              Ver detalles
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => onEdit(fotografo)}>
+              Editar
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => onDelete(fotografo.id)}>
+              Eliminar
+            </button>
+          </div>
+        )
+      }
+    ],
+    [onDelete, onEdit, onViewDetails, selectedFotografoId]
+  )
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
@@ -380,41 +436,12 @@ export default function AdminPhotographers() {
           {loading ? (
             <p className="muted text-sm">Cargando fotógrafos…</p>
           ) : fotografos.length ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-sand text-left uppercase text-xs tracking-wide text-slate-600">
-                  <tr>
-                    <th className="p-2">Nombre</th>
-                    <th className="p-2">Teléfono</th>
-                    <th className="p-2">Correo</th>
-                    <th className="p-2">Estado</th>
-                    <th className="p-2 text-right">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {fotografos.map(fotografo => (
-                    <tr
-                      key={fotografo.id}
-                      className={`border-b last:border-0 ${selectedFotografoId === fotografo.id ? 'bg-sand/60' : ''}`}
-                    >
-                      <td className="p-2 font-medium text-slate-700">{fotografo.nombrecompleto}</td>
-                      <td className="p-2">{fotografo.telefono || '—'}</td>
-                      <td className="p-2">{fotografo.correo || '—'}</td>
-                      <td className="p-2">{fotografo.estado === 'activo' ? 'Activo' : 'Inactivo'}</td>
-                      <td className="p-2">
-                        <div className="flex justify-end gap-2">
-                          <button type="button" className="btn btn-ghost" onClick={() => onViewDetails(fotografo)}>
-                            Ver detalles
-                          </button>
-                          <button type="button" className="btn btn-ghost" onClick={() => onEdit(fotografo)}>Editar</button>
-                          <button type="button" className="btn btn-ghost" onClick={() => onDelete(fotografo.id)}>Eliminar</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <AdminDataTable
+              columns={photographerColumns}
+              rows={fotografos}
+              rowKey={fotografo => fotografo.id}
+              caption={`Equipo de fotografía: ${fotografos.length}`}
+            />
           ) : (
             <p className="muted text-sm">Todavía no hay fotógrafos registrados.</p>
           )}
