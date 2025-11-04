@@ -19,6 +19,8 @@ const defaultFilters = {
   fecha: ''
 }
 
+const ITEMS_PER_PAGE = 10
+
 function normalize(value) {
   if (!value) return ''
   return value
@@ -64,6 +66,7 @@ export default function AdminReservations() {
   const [feedback, setFeedback] = useState({ type: '', message: '' })
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState(null)
+  const [currentPage, setCurrentPage] = useState(1)
 
   const reservadaEstadoId = useMemo(() => {
     const estado = estados.find(item => normalize(item?.nombre_estado) === 'reservada')
@@ -196,6 +199,27 @@ export default function AdminReservations() {
     })
     return Array.from(unique.entries()).map(([id, nombre]) => ({ id, nombre }))
   }, [reservas])
+
+  const totalPages = Math.max(1, Math.ceil(filteredReservas.length / ITEMS_PER_PAGE))
+  const safePage = Math.min(currentPage, totalPages)
+  const startIndex = (safePage - 1) * ITEMS_PER_PAGE
+  const endIndex = startIndex + ITEMS_PER_PAGE
+  const paginatedReservas = filteredReservas.slice(startIndex, endIndex)
+  const showingFrom = filteredReservas.length ? startIndex + 1 : 0
+  const showingTo = filteredReservas.length ? Math.min(endIndex, filteredReservas.length) : 0
+  const pages = Array.from({ length: totalPages }, (_, index) => index + 1)
+  const canGoPrevious = safePage > 1
+  const canGoNext = safePage < totalPages
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [filters.search, filters.estado, filters.fotografo, filters.fecha])
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages)
+    }
+  }, [currentPage, totalPages])
 
   const onFilterChange = (field, value) => {
     setFilters(prev => ({ ...prev, [field]: value }))
@@ -348,23 +372,23 @@ export default function AdminReservations() {
         {loading ? (
           <p className="muted text-sm">Cargando reservas…</p>
         ) : filteredReservas.length ? (
-          <>
-            <div className="hidden md:block table-responsive">
-              <table className="table">
+          <div className="admin-table-container">
+            <div className="admin-table-scroll">
+              <table className="admin-table">
                 <thead>
                   <tr>
-                    <th className="p-2">ID</th>
-                    <th className="p-2">Cliente</th>
-                    <th className="p-2">Fotógrafo</th>
-                    <th className="p-2">Paquete</th>
-                    <th className="p-2">Fecha</th>
-                    <th className="p-2">Horario</th>
-                    <th className="p-2">Estado actual</th>
-                    <th className="p-2">Actualizar estado</th>
+                    <th scope="col">ID</th>
+                    <th scope="col">Cliente</th>
+                    <th scope="col">Fotógrafo</th>
+                    <th scope="col">Paquete</th>
+                    <th scope="col">Fecha</th>
+                    <th scope="col">Horario</th>
+                    <th scope="col">Estado actual</th>
+                    <th scope="col">Actualizar estado</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredReservas.map(reserva => {
+                  {paginatedReservas.map(reserva => {
                     const estadoStyles = getEstadoStyles(reserva.estadoNombre)
                     const estadoActual = normalize(reserva.estadoNombre)
                     const entregada = estadoActual === 'entregada'
@@ -375,17 +399,27 @@ export default function AdminReservations() {
                     const disableAction = entregada || updatingId === reserva.id
 
                     return (
-                      <tr key={reserva.id} className="align-top">
-                        <td className="p-2 font-medium text-slate-700">#{reserva.id}</td>
-                        <td className="p-2">
-                          <div className="font-medium text-slate-700">{reserva.cliente}</div>
+                      <tr key={reserva.id}>
+                        <td data-label="ID">
+                          <span className="font-semibold text-umber">#{reserva.id}</span>
+                        </td>
+                        <td data-label="Cliente">
+                          <div className="font-medium text-umber">{reserva.cliente}</div>
                           <div className="text-xs text-slate-500">Agenda #{reserva.agendaId ?? '—'}</div>
                         </td>
-                        <td className="p-2 text-slate-600">{reserva.fotografo}</td>
-                        <td className="p-2 text-slate-600">{reserva.paquete}</td>
-                        <td className="p-2 text-slate-600">{formatDate(reserva.fecha)}</td>
-                        <td className="p-2 text-slate-600">{formatTimeRange(reserva.horaInicio, reserva.horaFin)}</td>
-                        <td className="p-2">
+                        <td data-label="Fotógrafo" className="text-slate-600">
+                          {reserva.fotografo}
+                        </td>
+                        <td data-label="Paquete" className="text-slate-600">
+                          {reserva.paquete}
+                        </td>
+                        <td data-label="Fecha" className="text-slate-600">
+                          {formatDate(reserva.fecha)}
+                        </td>
+                        <td data-label="Horario" className="text-slate-600">
+                          {formatTimeRange(reserva.horaInicio, reserva.horaFin)}
+                        </td>
+                        <td data-label="Estado actual">
                           <span
                             className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em]"
                             style={{ backgroundColor: estadoStyles.bg, color: estadoStyles.text }}
@@ -393,10 +427,10 @@ export default function AdminReservations() {
                             {reserva.estadoNombre}
                           </span>
                         </td>
-                        <td className="p-2">
-                          <div className="flex flex-col gap-2">
+                        <td data-label="Actualizar estado">
+                          <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
                             <select
-                              className="border rounded-xl2 px-2 py-1 text-sm"
+                              className="border rounded-xl2 px-3 py-2 text-sm"
                               value={selectedValue}
                               onChange={event => onSelectEstado(reserva.id, event.target.value)}
                               disabled={entregada}
@@ -424,79 +458,42 @@ export default function AdminReservations() {
                 </tbody>
               </table>
             </div>
-
-            <div className="space-y-3 md:hidden">
-              {filteredReservas.map(reserva => {
-                const estadoStyles = getEstadoStyles(reserva.estadoNombre)
-                const estadoActual = normalize(reserva.estadoNombre)
-                const entregada = estadoActual === 'entregada'
-                const selectedValue = selection[reserva.id] ?? ''
-                const hasSelection = selectedValue !== ''
-                const sameEstado =
-                  hasSelection && reserva.estadoId != null && Number(selectedValue) === Number(reserva.estadoId)
-                const disableAction = entregada || updatingId === reserva.id
-
-                return (
-                  <div key={reserva.id} className="card border border-[var(--border)] p-4 space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-semibold text-umber">Reserva #{reserva.id}</p>
-                        <p className="text-sm text-slate-600">{reserva.cliente}</p>
-                        <p className="text-xs text-slate-500">Agenda #{reserva.agendaId ?? '—'}</p>
-                      </div>
-                      <span
-                        className="inline-flex items-center rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]"
-                        style={{ backgroundColor: estadoStyles.bg, color: estadoStyles.text }}
-                      >
-                        {reserva.estadoNombre}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
-                      <div>
-                        <p className="font-semibold text-slate-700">Fotógrafo</p>
-                        <p>{reserva.fotografo}</p>
-                      </div>
-                      <div>
-                        <p className="font-semibold text-slate-700">Paquete</p>
-                        <p>{reserva.paquete}</p>
-                      </div>
-                      <div>
-                        <p className="font-semibold text-slate-700">Fecha</p>
-                        <p>{formatDate(reserva.fecha)}</p>
-                      </div>
-                      <div>
-                        <p className="font-semibold text-slate-700">Horario</p>
-                        <p>{formatTimeRange(reserva.horaInicio, reserva.horaFin)}</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <select
-                        className="border rounded-xl2 px-3 py-2 text-sm"
-                        value={selectedValue}
-                        onChange={event => onSelectEstado(reserva.id, event.target.value)}
-                        disabled={entregada}
-                      >
-                        <option value="">Selecciona un estado</option>
-                        {estados.map(estado => (
-                          <option key={estado.id} value={estado.id}>
-                            {estado.nombre_estado}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={() => actualizarEstado(reserva)}
-                        disabled={disableAction || !hasSelection || sameEstado}
-                      >
-                        {updatingId === reserva.id ? 'Guardando…' : 'Confirmar cambio'}
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
+            <div className="pagination">
+              <span className="pagination__summary">
+                Mostrando {showingFrom.toLocaleString('es-GT')}–{showingTo.toLocaleString('es-GT')} de{' '}
+                {filteredReservas.length.toLocaleString('es-GT')} resultados
+              </span>
+              <div className="pagination__buttons">
+                <button
+                  type="button"
+                  onClick={() => canGoPrevious && setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={!canGoPrevious}
+                  aria-label="Página anterior"
+                >
+                  Anterior
+                </button>
+                {pages.map(page => (
+                  <button
+                    key={page}
+                    type="button"
+                    onClick={() => setCurrentPage(page)}
+                    className={page === safePage ? 'active' : ''}
+                    aria-current={page === safePage ? 'page' : undefined}
+                  >
+                    {page}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => canGoNext && setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={!canGoNext}
+                  aria-label="Página siguiente"
+                >
+                  Siguiente
+                </button>
+              </div>
             </div>
-          </>
+          </div>
         ) : (
           <p className="muted text-sm">No hay reservas que coincidan con los filtros seleccionados.</p>
         )}
