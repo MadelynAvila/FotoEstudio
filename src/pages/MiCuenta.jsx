@@ -4,6 +4,36 @@ import { supabase } from '../lib/supabaseClient'
 
 const defaultReviewForm = { calificacion: '5', comentario: '' }
 
+const estadoIconos = {
+  pendiente: '🕒',
+  reservada: '📅',
+  'en progreso': '📸',
+  'en edición': '🖼️',
+  'en edicion': '🖼️',
+  impresión: '🖨️',
+  impresion: '🖨️',
+  lista: '🟢',
+  entregada: '✅'
+}
+
+const defaultEstadosActividad = [
+  { id: 'pendiente', nombre_estado: 'Pendiente', orden: 1 },
+  { id: 'reservada', nombre_estado: 'Reservada', orden: 2 },
+  { id: 'en-progreso', nombre_estado: 'En progreso', orden: 3 },
+  { id: 'en-edicion', nombre_estado: 'En edición', orden: 4 },
+  { id: 'impresion', nombre_estado: 'Impresión', orden: 5 },
+  { id: 'lista', nombre_estado: 'Lista', orden: 6 },
+  { id: 'entregada', nombre_estado: 'Entregada', orden: 7 }
+]
+
+const allowedReviewEstados = new Set(['lista', 'entregada'])
+
+const allowedPaymentMethods = {
+  transferencia: 'Transferencia bancaria',
+  'transferencia bancaria': 'Transferencia bancaria',
+  efectivo: 'Efectivo'
+}
+
 const ensureArray = (value) => {
   if (!value) return []
   if (Array.isArray(value)) return value
@@ -50,9 +80,13 @@ const renderStars = (rating) => {
   return `${'⭐'.repeat(clamped)}${'☆'.repeat(empty)}`
 }
 
-const isPagoCompletado = (estado) => {
-  const normalized = (estado || '').toString().trim().toLowerCase()
-  return ['completada', 'pagado', 'finalizada'].includes(normalized)
+const normalizeEstadoNombre = (value) => (value || '').toString().trim().toLowerCase()
+
+const formatCurrencyGTQ = (value) => {
+  if (value === null || value === undefined || value === '') return 'Por definir'
+  const numero = Number(value)
+  if (!Number.isFinite(numero)) return 'Por definir'
+  return `Q${numero.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 export default function MiCuenta () {
@@ -63,6 +97,26 @@ export default function MiCuenta () {
   const [reviewForm, setReviewForm] = useState(defaultReviewForm)
   const [reviewingId, setReviewingId] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [hoverRating, setHoverRating] = useState(null)
+  const [estadosActividad, setEstadosActividad] = useState([])
+
+  const fetchEstadosActividad = async () => {
+    const { data, error } = await supabase
+      .from('estado_actividad')
+      .select('id, nombre_estado, descripcion_estado, orden')
+      .order('orden', { ascending: true })
+
+    if (error) {
+      console.error('No se pudieron cargar los estados de la actividad', error)
+      setEstadosActividad(defaultEstadosActividad)
+      return
+    }
+
+    const estadosOrdenados = Array.isArray(data) && data.length
+      ? data
+      : defaultEstadosActividad
+    setEstadosActividad(estadosOrdenados)
+  }
 
   const fetchReservas = async () => {
     if (!user) return
@@ -71,6 +125,7 @@ export default function MiCuenta () {
       .from('actividad')
       .select(`
         id,
+        idestado_actividad,
         nombre_actividad,
         ubicacion,
         estado_pago,
@@ -81,7 +136,9 @@ export default function MiCuenta () {
           horainicio,
           horafin,
           fotografo:usuario(username)
-        )
+        ),
+        estado_actividad:estado_actividad(id, nombre_estado, orden),
+        pago:pago(metodo_pago, monto)
       `)
       .eq('idusuario', user.id)
       .order('fecha', { foreignTable: 'agenda', ascending: false, nullsLast: true })
@@ -119,12 +176,35 @@ export default function MiCuenta () {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
 
+  useEffect(() => {
+    fetchEstadosActividad()
+  }, [])
+
   const reservasConAgenda = useMemo(() => reservas.map((reserva) => ({
     ...reserva,
     agenda: normalizeSingle(reserva.agenda),
     paquete: normalizeSingle(reserva.paquete),
-    resenas: ensureArray(reserva.resenas)
+    resenas: ensureArray(reserva.resenas),
+    estado_actividad: normalizeSingle(reserva.estado_actividad),
+    pago: ensureArray(reserva.pago)
   })), [reservas])
+
+  const estadosOrdenados = useMemo(() => {
+    if (!Array.isArray(estadosActividad) || estadosActividad.length === 0) {
+      return defaultEstadosActividad
+    }
+    return [...estadosActividad].sort((a, b) => (a?.orden ?? 0) - (b?.orden ?? 0))
+  }, [estadosActividad])
+
+  const estadoOrdenPorId = useMemo(() => {
+    const mapa = new Map()
+    estadosOrdenados.forEach((estado) => {
+      if (estado?.id !== undefined) {
+        mapa.set(estado.id, estado.orden)
+      }
+    })
+    return mapa
+  }, [estadosOrdenados])
 
   const handleOpenReview = (reservaObjetivo) => {
     const actividadId = typeof reservaObjetivo === 'object' && reservaObjetivo !== null
@@ -139,21 +219,22 @@ export default function MiCuenta () {
       return
     }
 
-    const pagoCompletado = isPagoCompletado(actividad?.estado_pago)
-
-    if (!pagoCompletado) {
-      setFeedback({ type: 'error', message: 'Podrás dejar una reseña una vez completado tu pago.' })
+    const estadoActualNombre = normalizeEstadoNombre(actividad?.estado_actividad?.nombre_estado)
+    if (!allowedReviewEstados.has(estadoActualNombre)) {
+      setFeedback({ type: 'error', message: 'Podrás dejar una reseña cuando tu sesión esté lista o entregada.' })
       return
     }
 
     setFeedback({ type: '', message: '' })
     setReviewForm(defaultReviewForm)
     setReviewingId(actividadId)
+    setHoverRating(Number(defaultReviewForm.calificacion))
   }
 
   const handleCancelReview = () => {
     setReviewingId(null)
     setReviewForm(defaultReviewForm)
+    setHoverRating(null)
   }
 
   const updateReviewField = (field, value) => {
@@ -175,10 +256,9 @@ export default function MiCuenta () {
       return
     }
 
-    const pagoCompletado = isPagoCompletado(actividad?.estado_pago)
-
-    if (!pagoCompletado) {
-      setFeedback({ type: 'error', message: 'Podrás dejar una reseña una vez completado tu pago.' })
+    const estadoActualNombre = normalizeEstadoNombre(actividad?.estado_actividad?.nombre_estado)
+    if (!allowedReviewEstados.has(estadoActualNombre)) {
+      setFeedback({ type: 'error', message: 'Podrás dejar una reseña cuando tu sesión esté lista o entregada.' })
       handleCancelReview()
       return
     }
@@ -232,7 +312,7 @@ export default function MiCuenta () {
         throw error
       }
 
-      setFeedback({ type: 'success', message: '¡Gracias por tu reseña! Tu opinión nos ayuda a mejorar.' })
+      setFeedback({ type: 'success', message: '✅ ¡Gracias por tu reseña!' })
       handleCancelReview()
       fetchReservas()
     } catch (error) {
@@ -245,16 +325,16 @@ export default function MiCuenta () {
 
   return (
     <div className="container-1120 py-8 space-y-8">
-      <header className="space-y-2">
-        <p className="uppercase tracking-[.2em] text-xs text-umber">Mi cuenta</p>
-        <h1 className="font-display leading-snug">Mis reservas</h1>
-        <p className="muted text-sm md:text-base max-w-2xl">
-          Consulta el estado de tus reservas, detalles de tus sesiones y comparte tu experiencia después de cada sesión.
+      <header className="space-y-2 text-[#3b302a]">
+        <p className="uppercase tracking-[.2em] text-xs">Mi cuenta</p>
+        <h1 className="font-display leading-snug text-3xl">Mis reservas</h1>
+        <p className="muted text-sm md:text-base max-w-2xl text-slate-600">
+          Consulta el estado de tus reservas, sigue el progreso de tus sesiones y comparte tu experiencia cuando finalicen.
         </p>
       </header>
 
       {feedback.message && (
-        <p className={`text-sm ${feedback.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
+        <p className={`text-sm font-medium ${feedback.type === 'error' ? 'text-red-600' : 'text-emerald-600'}`}>
           {feedback.message}
         </p>
       )}
@@ -270,61 +350,141 @@ export default function MiCuenta () {
             const paquete = reserva.paquete ?? {}
             const resenas = reserva.resenas ?? []
             const tieneResena = resenas.length > 0
-            const pagoCompletado = isPagoCompletado(reserva.estado_pago)
-            const puedeResenar = !tieneResena && pagoCompletado
+            const estadoActualNombre = normalizeEstadoNombre(reserva?.estado_actividad?.nombre_estado)
+            const puedeResenar = !tieneResena && allowedReviewEstados.has(estadoActualNombre)
+            const pagosValidos = ensureArray(reserva.pago).filter((pago) => allowedPaymentMethods[normalizeEstadoNombre(pago?.metodo_pago)])
+            const pagoSeleccionado = pagosValidos[0] ?? null
+
+            const estadoActualId = reserva.idestado_actividad ?? reserva?.estado_actividad?.id
+            const ordenActual = estadoOrdenPorId.get(estadoActualId) ?? reserva?.estado_actividad?.orden ?? estadosOrdenados.find((estado) => normalizeEstadoNombre(estado.nombre_estado) === estadoActualNombre)?.orden ?? 0
+
+            const pasos = estadosOrdenados.map((estado) => {
+              const nombreNormalizado = normalizeEstadoNombre(estado.nombre_estado)
+              const icono = estadoIconos[nombreNormalizado] || '🔆'
+              let status = 'upcoming'
+              if ((estado.orden ?? 0) < ordenActual) {
+                status = 'completed'
+              } else if ((estado.orden ?? 0) === ordenActual || (!ordenActual && nombreNormalizado === estadoActualNombre)) {
+                status = 'current'
+              }
+
+              return {
+                ...estado,
+                icono,
+                status
+              }
+            })
 
             return (
-              <article key={reserva.id} className="card p-6 space-y-4">
-                <div className="flex flex-col gap-1">
-                  <h2 className="text-xl font-semibold">{paquete?.nombre_paquete || 'Paquete por definir'}</h2>
+              <article key={reserva.id} className="card space-y-6 bg-white p-6 shadow-sm">
+                <div className="space-y-1">
+                  <h2 className="text-2xl font-semibold text-[#3b302a]">{paquete?.nombre_paquete || 'Paquete por definir'}</h2>
                   <p className="text-sm text-slate-600">{reserva.nombre_actividad || 'Actividad sin título'}</p>
-                  <p className="muted text-sm">ID de reserva: {reserva.id}</p>
+                  <p className="text-xs uppercase tracking-[.2em] text-slate-400">ID de reserva: {reserva.id}</p>
                 </div>
 
-                <dl className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <dt className="muted uppercase tracking-[.2em] text-xs">📅 Fecha</dt>
-                    <dd className="font-medium">{formatDate(agenda?.fecha)}</dd>
+                <section className="space-y-4">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <h3 className="text-lg font-semibold text-[#3b302a]">Progreso de tu sesión</h3>
+                    <span className="text-sm font-medium text-[#3b302a]">
+                      Estado actual: {reserva?.estado_actividad?.nombre_estado || 'Pendiente'}
+                    </span>
                   </div>
-                  <div>
-                    <dt className="muted uppercase tracking-[.2em] text-xs">🕐 Horario</dt>
-                    <dd className="font-medium">{`${formatHour(agenda?.horainicio)} a ${formatHour(agenda?.horafin)}`}</dd>
-                  </div>
-                  <div>
-                    <dt className="muted uppercase tracking-[.2em] text-xs">👤 Fotógrafo</dt>
-                    <dd className="font-medium">{agenda?.fotografo?.username || 'Por asignar'}</dd>
-                  </div>
-                  <div>
-                    <dt className="muted uppercase tracking-[.2em] text-xs">🎬 Actividad</dt>
-                    <dd className="font-medium">{reserva.nombre_actividad || 'Actividad sin título'}</dd>
-                  </div>
-                  <div>
-                    <dt className="muted uppercase tracking-[.2em] text-xs">🎁 Paquete</dt>
-                    <dd className="font-medium">{paquete?.nombre_paquete || 'Sin paquete'}</dd>
-                  </div>
-                  <div>
-                    <dt className="muted uppercase tracking-[.2em] text-xs">💰 Precio</dt>
-                    <dd className="font-medium">{paquete?.precio ? `$${Number(paquete.precio).toLocaleString('es-MX')}` : 'Por definir'}</dd>
-                  </div>
-                  <div>
-                    <dt className="muted uppercase tracking-[.2em] text-xs">📍 Ubicación</dt>
-                    <dd className="font-medium">{reserva.ubicacion || 'Por definir'}</dd>
-                  </div>
-                  <div>
-                    <dt className="muted uppercase tracking-[.2em] text-xs">💳 Estado de pago</dt>
-                    <dd className="font-medium capitalize">{reserva.estado_pago || 'Pendiente'}</dd>
-                  </div>
-                </dl>
+                  <ol className="relative space-y-6 md:flex md:items-center md:space-y-0 md:gap-3">
+                    {pasos.map((paso, index) => {
+                      const isLast = index === pasos.length - 1
+                      const isCompleted = paso.status === 'completed'
+                      const isCurrent = paso.status === 'current'
+                      const colorBase = isCurrent ? '#3b302a' : isCompleted ? '#c9b38a' : '#e4ddcc'
+                      const connectorColor = isCompleted || isCurrent ? 'bg-[#3b302a]' : 'bg-[#e4ddcc]'
+                      const textColor = isCurrent ? 'text-[#3b302a]' : isCompleted ? 'text-[#3b302a]' : 'text-slate-500'
+
+                      return (
+                        <li key={`${paso.id}-${paso.nombre_estado}`} className="relative flex flex-col gap-3 md:flex-1 md:flex-row md:items-center">
+                          <div className="flex items-center md:flex-col md:items-center md:text-center">
+                            <div
+                              className="relative flex h-12 w-12 items-center justify-center rounded-full border-2 text-2xl transition-all duration-300"
+                              style={{
+                                backgroundColor: colorBase,
+                                borderColor: colorBase,
+                                color: isCurrent ? '#ffffff' : '#3b302a'
+                              }}
+                            >
+                              <span>{paso.icono}</span>
+                              {isCompleted && (
+                                <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold text-[#3b302a] shadow ring-2 ring-[#c9b38a]">✓</span>
+                              )}
+                            </div>
+                            <div className="ml-3 md:ml-0 md:mt-3">
+                              <p className={`text-sm font-semibold transition-colors duration-300 ${textColor}`}>{paso.nombre_estado}</p>
+                              {paso.descripcion_estado && (
+                                <p className="text-xs text-slate-500">{paso.descripcion_estado}</p>
+                              )}
+                            </div>
+                          </div>
+                          {!isLast && (
+                            <>
+                              <span className={`absolute left-[23px] top-[56px] h-8 w-0.5 md:hidden ${connectorColor}`} aria-hidden="true" />
+                              <span className={`hidden h-1 flex-1 rounded-full md:block ${connectorColor}`} aria-hidden="true" />
+                            </>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ol>
+                </section>
+
+                <section className="rounded-3xl bg-[#f6f2ea] p-5 text-sm text-[#3b302a] shadow-inner">
+                  <h3 className="text-lg font-semibold">Detalles de tu reserva</h3>
+                  <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <dt className="text-xs uppercase tracking-[.2em] text-[#3b302a]/70">📅 Fecha</dt>
+                      <dd className="font-medium">{formatDate(agenda?.fecha)}</dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-xs uppercase tracking-[.2em] text-[#3b302a]/70">🕐 Horario</dt>
+                      <dd className="font-medium">{`${formatHour(agenda?.horainicio)} a ${formatHour(agenda?.horafin)}`}</dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-xs uppercase tracking-[.2em] text-[#3b302a]/70">👤 Fotógrafo</dt>
+                      <dd className="font-medium">{agenda?.fotografo?.username || 'Por asignar'}</dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-xs uppercase tracking-[.2em] text-[#3b302a]/70">🎬 Actividad</dt>
+                      <dd className="font-medium">{reserva.nombre_actividad || 'Actividad sin título'}</dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-xs uppercase tracking-[.2em] text-[#3b302a]/70">🎁 Paquete</dt>
+                      <dd className="font-medium">{paquete?.nombre_paquete || 'Sin paquete'}</dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-xs uppercase tracking-[.2em] text-[#3b302a]/70">💰 Precio</dt>
+                      <dd className="font-medium">{formatCurrencyGTQ(paquete?.precio)}</dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-xs uppercase tracking-[.2em] text-[#3b302a]/70">📍 Ubicación</dt>
+                      <dd className="font-medium">{reserva.ubicacion || 'Por definir'}</dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-xs uppercase tracking-[.2em] text-[#3b302a]/70">💳 Método de pago</dt>
+                      <dd className="font-medium">{pagoSeleccionado ? allowedPaymentMethods[normalizeEstadoNombre(pagoSeleccionado.metodo_pago)] : 'Por registrar'}</dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-xs uppercase tracking-[.2em] text-[#3b302a]/70">🏷️ Estado de pago</dt>
+                      <dd className="font-medium capitalize">{reserva.estado_pago || 'Pendiente'}</dd>
+                    </div>
+                  </dl>
+                </section>
 
                 <section className="space-y-3">
-                  <h3 className="text-lg font-semibold">Tu experiencia</h3>
+                  <h3 className="text-lg font-semibold text-[#3b302a]">Tu experiencia</h3>
                   {tieneResena ? (
                     <div className="space-y-3">
-                      <p className="text-emerald-600">✅ Ya calificaste esta sesión.</p>
+                      <p className="text-emerald-700">✅ Ya calificaste esta sesión.</p>
                       {resenas.map((resena) => (
-                        <div key={resena.id} className="rounded-xl2 border border-dashed border-umber/30 bg-sand/40 p-4 space-y-2">
+                        <div key={resena.id} className="rounded-3xl border border-[#c9b38a]/60 bg-white/80 p-4 shadow-sm">
                           <div className="flex items-center gap-2">
-                            <span>{renderStars(resena.calificacion)}</span>
+                            <span className="text-xl text-[#3b302a]">{renderStars(resena.calificacion)}</span>
                             <span className="text-sm text-slate-600">({resena.calificacion}/5)</span>
                           </div>
                           <p className="text-sm text-slate-700 whitespace-pre-line">{resena.comentario}</p>
@@ -340,30 +500,42 @@ export default function MiCuenta () {
                         Comparte cómo fue tu sesión para ayudar a otros clientes.
                       </p>
                       <p className="text-sm text-slate-500">
-                        Podrás dejar una reseña una vez finalizada tu sesión.
+                        Podrás dejar una reseña cuando tu sesión esté lista o entregada.
                       </p>
                       {puedeResenar && (
                         reviewingId === reserva.id ? (
-                          <form onSubmit={handleSubmitReview} className="grid gap-3 p-4 border border-dashed border-umber/40 rounded-xl2 bg-sand/30">
-                            <label className="grid gap-1 text-sm">
-                              <span className="font-medium text-slate-700">Calificación</span>
-                              <select
-                                value={reviewForm.calificacion}
-                                onChange={(event) => updateReviewField('calificacion', event.target.value)}
-                                className="border rounded-xl2 px-3 py-2"
-                              >
-                                {[1, 2, 3, 4, 5].map((value) => (
-                                  <option key={value} value={value}>{value} estrella{value === 1 ? '' : 's'}</option>
-                                ))}
-                              </select>
-                            </label>
-                            <label className="grid gap-1 text-sm">
-                              <span className="font-medium text-slate-700">Comentario</span>
+                          <form onSubmit={handleSubmitReview} className="grid gap-4 rounded-3xl border border-[#c9b38a]/60 bg-white/90 p-5 shadow-sm">
+                            <div className="space-y-2">
+                              <span className="text-sm font-medium text-[#3b302a]">Califica tu sesión</span>
+                              <div className="flex items-center gap-2">
+                                {[1, 2, 3, 4, 5].map((valor) => {
+                                  const activo = (hoverRating ?? Number(reviewForm.calificacion)) >= valor
+                                  return (
+                                    <button
+                                      key={valor}
+                                      type="button"
+                                      className={`text-2xl transition-transform duration-200 ${activo ? 'scale-110 text-[#3b302a]' : 'text-[#e4ddcc]'} focus:outline-none`}
+                                      onMouseEnter={() => setHoverRating(valor)}
+                                      onMouseLeave={() => setHoverRating(null)}
+                                      onFocus={() => setHoverRating(valor)}
+                                      onBlur={() => setHoverRating(null)}
+                                      onClick={() => updateReviewField('calificacion', String(valor))}
+                                      aria-label={`${valor} estrella${valor === 1 ? '' : 's'}`}
+                                    >
+                                      ★
+                                    </button>
+                                  )
+                                })}
+                                <span className="text-sm text-[#3b302a]">{reviewForm.calificacion}/5</span>
+                              </div>
+                            </div>
+                            <label className="grid gap-2 text-sm">
+                              <span className="font-medium text-[#3b302a]">Comentario</span>
                               <textarea
                                 value={reviewForm.comentario}
                                 onChange={(event) => updateReviewField('comentario', event.target.value)}
-                                className="border rounded-xl2 px-3 py-3 min-h-[120px]"
-                                placeholder="Cuéntanos cómo fue tu experiencia con Aguín Fotografía."
+                                className="rounded-2xl border border-[#c9b38a]/50 bg-white px-3 py-3 text-sm shadow-inner focus:border-[#3b302a] focus:outline-none"
+                                placeholder="Cuéntanos cómo fue tu sesión..."
                               />
                             </label>
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
@@ -378,7 +550,7 @@ export default function MiCuenta () {
                         ) : (
                           <button
                             type="button"
-                            className="btn btn-secondary mt-2"
+                            className="btn btn-secondary mt-2 transition-transform duration-200 hover:scale-[1.01]"
                             onClick={() => handleOpenReview(reserva)}
                           >
                             ⭐ Califícanos
