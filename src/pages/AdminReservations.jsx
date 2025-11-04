@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import DEFAULT_PAYMENT_STATES, { getPaymentStateClasses } from '../lib/paymentStates'
 import AdminHelpCard from '../components/AdminHelpCard'
 import AdminDataTable from '../components/AdminDataTable'
 import AdminDatePicker from '../components/AdminDatePicker'
@@ -82,6 +83,13 @@ export default function AdminReservations() {
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState(null)
 
+  const paymentStateIds = useMemo(() => ({
+    pendiente: getPaymentStateClasses(1, DEFAULT_PAYMENT_STATES).id ?? 1,
+    anticipo: getPaymentStateClasses(2, DEFAULT_PAYMENT_STATES).id ?? 2,
+    pagado: getPaymentStateClasses(3, DEFAULT_PAYMENT_STATES).id ?? 3
+  }), [])
+  const anticipoInfo = useMemo(() => getPaymentStateClasses(paymentStateIds.anticipo, DEFAULT_PAYMENT_STATES), [paymentStateIds])
+
   const reservadaEstadoId = useMemo(() => {
     const estado = estados.find(item => normalize(item?.nombre_estado) === 'reservada')
     return estado?.id ?? null
@@ -94,7 +102,7 @@ export default function AdminReservations() {
     const [actividadesRes, estadosRes] = await Promise.all([
       supabase
         .from('actividad')
-        .select('id, idusuario, idagenda, idpaquete, idestado_actividad, estado_pago')
+        .select('id, idusuario, idagenda, idpaquete, idestado_actividad, idestado_pago, estado_pago:estado_pago ( id, nombre_estado )')
         .order('id', { ascending: false }),
       supabase
         .from('estado_actividad')
@@ -153,6 +161,11 @@ export default function AdminReservations() {
       const paquete = paqueteMap.get(item.idpaquete)
       const estado = estadoMap.get(item.idestado_actividad)
 
+      const estadoPagoInfo = getPaymentStateClasses(
+        item.estado_pago?.nombre_estado || item.estado_pago || item.idestado_pago,
+        DEFAULT_PAYMENT_STATES
+      )
+
       return {
         id: item.id,
         clienteId: cliente?.id ?? null,
@@ -165,7 +178,8 @@ export default function AdminReservations() {
         horaFin: agenda?.horafin || null,
         estadoId: item.idestado_actividad ?? null,
         estadoNombre: estado?.nombre_estado || 'Pendiente',
-        estadoPago: item.estado_pago || 'Pendiente',
+        estadoPago: estadoPagoInfo.label,
+        estadoPagoId: estadoPagoInfo.id,
         agendaId: item.idagenda || null
       }
     })
@@ -323,7 +337,7 @@ export default function AdminReservations() {
 
     const payload = { idestado_actividad: nuevoEstadoId }
     if (reservadaEstadoId && nuevoEstadoId === Number(reservadaEstadoId)) {
-      payload.estado_pago = 'Confirmado'
+      payload.idestado_pago = paymentStateIds.anticipo
     }
 
     const { error } = await supabase.from('actividad').update(payload).eq('id', reserva.id)
@@ -343,8 +357,12 @@ export default function AdminReservations() {
                 estadoNombre: estadoActualizado?.nombre_estado || item.estadoNombre,
                 estadoPago:
                   reservadaEstadoId && nuevoEstadoId === Number(reservadaEstadoId)
-                    ? 'Confirmado'
-                    : item.estadoPago
+                    ? anticipoInfo.label
+                    : item.estadoPago,
+                estadoPagoId:
+                  reservadaEstadoId && nuevoEstadoId === Number(reservadaEstadoId)
+                    ? anticipoInfo.id ?? paymentStateIds.anticipo
+                    : item.estadoPagoId
               }
             : item
         )

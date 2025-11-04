@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import DEFAULT_PAYMENT_STATES, { getPaymentStateClasses } from '../lib/paymentStates'
 import AdminHelpCard from '../components/AdminHelpCard'
 
 const defaultStats = {
@@ -133,7 +134,8 @@ export default function AdminDashboard(){
           .from('actividad')
           .select(`
             id,
-            estado_pago,
+            idestado_pago,
+            estado_pago:estado_pago ( id, nombre_estado ),
             nombre_actividad,
             ubicacion,
             agenda:agenda ( fecha, horainicio, horafin ),
@@ -192,7 +194,11 @@ export default function AdminDashboard(){
       const formatted = actividades.map(item => {
         const clienteNombre = item.cliente?.username || 'Cliente sin nombre'
         const fechaAgenda = item.agenda?.fecha || null
-        const estado = (item.estado_pago || 'Pendiente').toLowerCase()
+        const estadoPagoInfo = getPaymentStateClasses(
+          item.estado_pago?.nombre_estado || item.estado_pago || item.idestado_pago,
+          DEFAULT_PAYMENT_STATES
+        )
+        const estado = (estadoPagoInfo?.key || estadoPagoInfo?.label || 'Pendiente').toLowerCase()
         const pago = Array.isArray(item.pago) ? item.pago[0] : item.pago
         return {
           id: item.id,
@@ -200,6 +206,7 @@ export default function AdminDashboard(){
           comentarios: item.nombre_actividad || item.paquete?.nombre_paquete || '',
           fecha: fechaAgenda,
           estado,
+          estadoPagoInfo,
           paquete: item.paquete?.nombre_paquete || 'Paquete sin asignar',
           pago: pago || (pagosPorActividad.has(Number(item.id)) ? { id: item.id } : null)
         }

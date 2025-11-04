@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import DEFAULT_PAYMENT_STATES, { getPaymentStateClasses } from '../lib/paymentStates'
 import AdminHelpCard from '../components/AdminHelpCard'
 import AdminDataTable from '../components/AdminDataTable'
 
@@ -119,7 +120,7 @@ export default function AdminClients(){
 
     const { data, error } = await supabase
       .from('actividad')
-      .select('id, estado_pago, nombre_actividad, ubicacion, agenda:agenda ( fecha, horainicio, horafin ), paquete:paquete ( nombre_paquete )')
+      .select('id, idestado_pago, estado_pago:estado_pago ( id, nombre_estado ), nombre_actividad, ubicacion, agenda:agenda ( fecha, horainicio, horafin ), paquete:paquete ( nombre_paquete )')
       .eq('idusuario', cliente.usuarioId)
       .order('id', { ascending: false })
 
@@ -129,16 +130,22 @@ export default function AdminClients(){
       return
     }
 
-    const reservas = (data ?? []).map(item => ({
-      id: item.id,
-      estadoPago: item.estado_pago,
-      nombreActividad: item.nombre_actividad,
-      ubicacion: item.ubicacion,
-      fecha: item.agenda?.fecha,
-      horaInicio: item.agenda?.horainicio,
-      horaFin: item.agenda?.horafin,
-      paquete: item.paquete?.nombre_paquete
-    }))
+    const reservas = (data ?? []).map(item => {
+      const estadoPagoInfo = getPaymentStateClasses(
+        item.estado_pago?.nombre_estado || item.estado_pago || item.idestado_pago,
+        DEFAULT_PAYMENT_STATES
+      )
+      return {
+        id: item.id,
+        estadoPago: estadoPagoInfo.label,
+        nombreActividad: item.nombre_actividad,
+        ubicacion: item.ubicacion,
+        fecha: item.agenda?.fecha,
+        horaInicio: item.agenda?.horainicio,
+        horaFin: item.agenda?.horafin,
+        paquete: item.paquete?.nombre_paquete
+      }
+    })
 
     setHistoryPanel(prev => ({ ...prev, loading: false, reservas }))
   }

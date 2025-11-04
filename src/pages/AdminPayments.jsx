@@ -3,10 +3,22 @@ import { supabase } from '../lib/supabaseClient'
 import AdminHelpCard from '../components/AdminHelpCard'
 import AdminDataTable from '../components/AdminDataTable'
 import AdminDatePicker from '../components/AdminDatePicker'
+import DEFAULT_PAYMENT_STATES, {
+  calculatePaymentProgress,
+  getPaymentStateClasses,
+  mapStates,
+  resolvePaymentState
+} from '../lib/paymentStates'
 
 const PAYMENT_METHODS = [
   { value: 'Transferencia', label: 'Transferencia bancaria' },
   { value: 'Efectivo', label: 'Efectivo' }
+]
+
+const PAYMENT_TYPES = [
+  { value: 'Anticipo', label: 'Anticipo' },
+  { value: 'Saldo', label: 'Saldo pendiente' },
+  { value: 'Pago', label: 'Pago completo' }
 ]
 
 const createDefaultForm = () => {
@@ -17,10 +29,10 @@ const createDefaultForm = () => {
     idactividad: '',
     monto: '',
     metodo: PAYMENT_METHODS[0].value,
+    tipoPago: PAYMENT_TYPES[0].value,
     detalle: '',
     fechaPago: now,
-    horaPago: `${hours}:${minutes}`,
-    esAbono: false
+    horaPago: `${hours}:${minutes}`
   }
 }
 const defaultFilters = { search: '', metodo: 'all', rangoFechas: [null, null] }
@@ -62,7 +74,10 @@ function endOfDay(date) {
 
 function formatCurrency(value) {
   const amount = Number(value) || 0
-  return `Q${amount.toLocaleString('es-GT')}`
+  return `Q${amount.toLocaleString('es-GT', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}`
 }
 
 export default function AdminPayments(){
@@ -75,18 +90,21 @@ export default function AdminPayments(){
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState({ type: '', message: '' })
   const [toast, setToast] = useState(null)
+  const [paymentStates, setPaymentStates] = useState(DEFAULT_PAYMENT_STATES)
+  const [deletingPaymentId, setDeletingPaymentId] = useState(null)
 
   const fetchPayments = useCallback(async () => {
     setLoading(true)
     setFeedback({ type: '', message: '' })
 
-    const [actividadesRes, pagosRes] = await Promise.all([
+    const [actividadesRes, pagosRes, estadosRes] = await Promise.all([
       supabase
         .from('actividad')
         .select(`
           id,
           nombre_actividad,
-          estado_pago,
+          idestado_pago,
+          estado_pago:estado_pago ( id, nombre_estado ),
           agenda:agenda ( fecha, horainicio ),
           cliente:usuario!actividad_idusuario_fkey ( id, username, telefono ),
           paquete:paquete ( id, nombre_paquete, precio )
@@ -94,8 +112,12 @@ export default function AdminPayments(){
         .order('id', { ascending: false }),
       supabase
         .from('pago')
-        .select('id, idactividad, metodo_pago, monto, fecha_pago, detalle_pago')
-        .order('fecha_pago', { ascending: false })
+        .select('id, idactividad, metodo_pago, monto, fecha_pago, detalle_pago, tipo_pago, idestado_pago, estado_pago:estado_pago ( id, nombre_estado )')
+        .order('fecha_pago', { ascending: false }),
+      supabase
+        .from('estado_pago')
+        .select('id, nombre_estado, descripcion_estado, orden')
+        .order('orden', { ascending: true })
     ])
 
     if (actividadesRes.error || pagosRes.error) {
@@ -107,43 +129,117 @@ export default function AdminPayments(){
       return
     }
 
+    if (estadosRes.error) {
+      console.warn('No se pudieron cargar los estados de pago desde la base de datos.', estadosRes.error)
+    }
+
     const actividadesData = actividadesRes.data ?? []
     const pagosData = pagosRes.data ?? []
+    const rawStates = Array.isArray(estadosRes.data) ? estadosRes.data : []
 
-    const normalizedActivities = actividadesData.map(item => ({
-      id: item.id,
-      nombre: item.nombre_actividad || '',
-      estadoPago: item.estado_pago || 'Pendiente',
-      cliente: item.cliente?.username || 'Cliente sin nombre',
-      clienteTelefono: item.cliente?.telefono || '',
-      paquete: item.paquete?.nombre_paquete || 'Paquete sin definir',
-      paquetePrecio: item.paquete?.precio ?? null,
-      agendaFecha: item.agenda?.fecha || null,
-      agendaHora: item.agenda?.horainicio || null
-    }))
+    const states = rawStates.length
+      ? rawStates.map(state => {
+          const fallback = getPaymentStateClasses(state.nombre_estado || state.id, DEFAULT_PAYMENT_STATES)
+          return {
+            ...state,
+            key: fallback.key,
+            label: state.nombre_estado || fallback.label,
+            badgeClass: fallback.badgeClass,
+            textClass: fallback.textClass
+          }
+        })
+      : DEFAULT_PAYMENT_STATES
+
+    setPaymentStates(states)
+
+    const normalizedActivities = actividadesData.map(item => {
+      const stateSource = item.estado_pago?.nombre_estado || item.estado_pago || item.idestado_pago
+      const estadoPagoInfo = getPaymentStateClasses(stateSource, states)
+      return {
+        id: item.id,
+        nombre: item.nombre_actividad || '',
+        estadoPago: estadoPagoInfo.label,
+        estadoPagoId: estadoPagoInfo.id,
+        estadoPagoInfo,
+        cliente: item.cliente?.username || 'Cliente sin nombre',
+        clienteTelefono: item.cliente?.telefono || '',
+        paquete: item.paquete?.nombre_paquete || 'Paquete sin definir',
+        paquetePrecio: Number(item.paquete?.precio ?? 0),
+        agendaFecha: item.agenda?.fecha || null,
+        agendaHora: item.agenda?.horainicio || null
+      }
+    })
 
     const actividadMap = new Map(normalizedActivities.map(item => [Number(item.id), item]))
+    const paymentsByActivityMap = new Map()
 
     const formattedPayments = pagosData.map(pago => {
       const actividad = actividadMap.get(Number(pago.idactividad)) || null
-      return {
+      const estadoPagoInfo = getPaymentStateClasses(
+        pago.estado_pago?.nombre_estado || pago.estado_pago || pago.idestado_pago,
+        states
+      )
+
+      const entry = {
         id: pago.id,
         actividadId: pago.idactividad,
         metodoPago: pago.metodo_pago || 'Método no especificado',
         monto: Number(pago.monto ?? 0),
         fechaPago: pago.fecha_pago || null,
         detallePago: pago.detalle_pago || '',
+        tipoPago: pago.tipo_pago || 'Pago',
+        estadoPago: estadoPagoInfo.label,
+        estadoPagoId: estadoPagoInfo.id,
+        estadoPagoInfo,
         cliente: actividad?.cliente || 'Cliente sin nombre',
         paquete: actividad?.paquete || 'Paquete sin definir',
-        estadoPago: actividad?.estadoPago || 'Pendiente',
         agendaFecha: actividad?.agendaFecha || null,
         agendaHora: actividad?.agendaHora || null,
         actividad
       }
+
+      const actividadIdNum = Number(pago.idactividad)
+      if (!paymentsByActivityMap.has(actividadIdNum)) {
+        paymentsByActivityMap.set(actividadIdNum, [])
+      }
+      paymentsByActivityMap.get(actividadIdNum).push(entry)
+      return entry
     })
 
-    setActivities(normalizedActivities)
-    setPayments(formattedPayments)
+    const activitiesWithSummary = normalizedActivities.map(activity => {
+      const pagosActividad = paymentsByActivityMap.get(Number(activity.id)) || []
+      const totalPagado = pagosActividad.reduce((acc, pago) => acc + (Number(pago.monto) || 0), 0)
+      const progress = calculatePaymentProgress(totalPagado, activity.paquetePrecio)
+
+      let estadoPagoInfo = activity.estadoPagoInfo
+      if (pagosActividad.length === 0 && totalPagado <= 0) {
+        estadoPagoInfo = getPaymentStateClasses(activity.estadoPagoId ?? 1, states)
+      } else if (progress.percentage >= 100 || activity.paquetePrecio <= 0) {
+        estadoPagoInfo = getPaymentStateClasses(3, states)
+      } else {
+        estadoPagoInfo = getPaymentStateClasses(2, states)
+      }
+
+      return {
+        ...activity,
+        estadoPago: estadoPagoInfo.label,
+        estadoPagoId: estadoPagoInfo.id,
+        estadoPagoInfo,
+        totalPagado,
+        porcentajePagado: progress.percentage,
+        saldoRestante: progress.remaining,
+        pagos: pagosActividad
+      }
+    })
+
+    const activitySummaryMap = new Map(activitiesWithSummary.map(item => [Number(item.id), item]))
+    const paymentsWithActivity = formattedPayments.map(pago => ({
+      ...pago,
+      actividad: activitySummaryMap.get(Number(pago.actividadId)) || pago.actividad
+    }))
+
+    setActivities(activitiesWithSummary)
+    setPayments(paymentsWithActivity)
     setLoading(false)
   }, [])
 
@@ -173,6 +269,18 @@ export default function AdminPayments(){
     [activities]
   )
 
+  const paymentStateIds = useMemo(() => {
+    const mapped = mapStates(paymentStates)
+    const pendiente = resolvePaymentState(1, paymentStates) || resolvePaymentState('Pendiente', paymentStates)
+    const anticipo = resolvePaymentState(2, paymentStates) || resolvePaymentState('Con anticipo', paymentStates)
+    const pagado = resolvePaymentState(3, paymentStates) || resolvePaymentState('Pagado', paymentStates)
+    return {
+      pendiente: pendiente?.id ?? mapped.list[0]?.id ?? 1,
+      anticipo: anticipo?.id ?? mapped.list[1]?.id ?? 2,
+      pagado: pagado?.id ?? mapped.list[2]?.id ?? 3
+    }
+  }, [paymentStates])
+
   const paymentsByActivity = useMemo(() => {
     const map = new Map()
     payments.forEach(pago => {
@@ -187,7 +295,13 @@ export default function AdminPayments(){
 
   const selectedActivity = form.idactividad ? activitiesMap.get(Number(form.idactividad)) || null : null
   const existingPaymentsForSelected = selectedActivity ? paymentsByActivity.get(Number(selectedActivity.id)) ?? [] : []
-  const hasPreviousPayment = existingPaymentsForSelected.length > 0
+  const selectedProgress = selectedActivity
+    ? {
+        percentage: selectedActivity.porcentajePagado ?? 0,
+        total: selectedActivity.totalPagado ?? 0,
+        remaining: selectedActivity.saldoRestante ?? 0
+      }
+    : { percentage: 0, total: 0, remaining: 0 }
 
   const filteredPayments = useMemo(() => {
     const searchTerm = normalize(filters.search)
@@ -200,7 +314,8 @@ export default function AdminPayments(){
       const matchesSearch =
         !searchTerm ||
         normalize(pago.cliente).includes(searchTerm) ||
-        normalize(pago.paquete).includes(searchTerm)
+        normalize(pago.paquete).includes(searchTerm) ||
+        normalize(pago.tipoPago).includes(searchTerm)
 
       const matchesMetodo = metodoFiltro === 'all' || pago.metodoPago === metodoFiltro
 
@@ -226,19 +341,82 @@ export default function AdminPayments(){
     [activitiesMap]
   )
 
+  const syncActivityPaymentState = useCallback(async (actividadId, pagos, precioReferencia) => {
+    const actividadIdNum = Number(actividadId)
+    if (Number.isNaN(actividadIdNum)) return
+
+    const pagosEvaluar = Array.isArray(pagos)
+      ? pagos
+      : paymentsByActivity.get(actividadIdNum) || []
+
+    const montoTotal = pagosEvaluar.reduce((acc, pago) => acc + (Number(pago?.monto) || 0), 0)
+    const precioObjetivo = precioReferencia != null
+      ? Number(precioReferencia)
+      : Number(activitiesMap.get(actividadIdNum)?.paquetePrecio ?? 0)
+
+    let estadoObjetivo = paymentStateIds.pendiente
+    if (precioObjetivo <= 0 && montoTotal > 0) {
+      estadoObjetivo = paymentStateIds.pagado
+    } else if (precioObjetivo > 0 && montoTotal >= precioObjetivo) {
+      estadoObjetivo = paymentStateIds.pagado
+    } else if (montoTotal > 0) {
+      estadoObjetivo = paymentStateIds.anticipo
+    }
+
+    const { error } = await supabase
+      .from('actividad')
+      .update({ idestado_pago: estadoObjetivo })
+      .eq('id', actividadIdNum)
+
+    if (error) {
+      console.error('No se pudo sincronizar el estado de pago de la actividad.', error)
+    }
+  }, [activitiesMap, paymentStateIds, paymentsByActivity])
+
+  const handleDeletePayment = useCallback(async (payment) => {
+    if (!payment) return
+    const confirmed = window.confirm('¿Deseas eliminar este pago? Esta acción no se puede deshacer.')
+    if (!confirmed) return
+
+    setDeletingPaymentId(payment.id)
+    const { error } = await supabase.from('pago').delete().eq('id', payment.id)
+
+    if (error) {
+      console.error('No se pudo eliminar el pago', error)
+      setToast({ type: 'error', message: '❌ No se pudo eliminar el pago.' })
+      setDeletingPaymentId(null)
+      return
+    }
+
+    const pagosPrevios = paymentsByActivity.get(Number(payment.actividadId)) || []
+    const pagosRestantes = pagosPrevios.filter(item => item.id !== payment.id)
+    const actividad = activitiesMap.get(Number(payment.actividadId)) || null
+
+    try {
+      await syncActivityPaymentState(payment.actividadId, pagosRestantes, actividad?.paquetePrecio)
+    } catch (syncError) {
+      console.error('No se pudo actualizar el estado de la actividad tras eliminar el pago.', syncError)
+    }
+
+    setToast({ type: 'success', message: '🗑️ Pago eliminado correctamente' })
+    setDeletingPaymentId(null)
+    fetchPayments()
+  }, [activitiesMap, fetchPayments, paymentsByActivity, syncActivityPaymentState])
+
   const handleSelectActivity = (value) => {
     const actividad = value ? activitiesMap.get(Number(value)) || null : null
-    const numericPrice = actividad?.paquetePrecio != null && actividad.paquetePrecio !== ''
-      ? Number(actividad.paquetePrecio)
-      : null
-    const monto = numericPrice != null && !Number.isNaN(numericPrice)
-      ? String(numericPrice)
-      : ''
+    const saldoRestante = actividad ? Number(actividad.saldoRestante ?? 0) : 0
+    const precioPaquete = actividad ? Number(actividad.paquetePrecio ?? 0) : 0
+    const monto = saldoRestante > 0 ? saldoRestante : precioPaquete
+    const tipoPago = saldoRestante > 0 && saldoRestante < precioPaquete
+      ? 'Saldo'
+      : PAYMENT_TYPES[0].value
+
     setForm(prev => ({
-      ...prev,
+      ...createDefaultForm(),
       idactividad: value,
-      monto,
-      esAbono: false
+      monto: monto > 0 ? String(monto.toFixed(2)) : '',
+      tipoPago
     }))
   }
 
@@ -247,6 +425,17 @@ export default function AdminPayments(){
     const timer = window.setTimeout(() => setToast(null), 4000)
     return () => window.clearTimeout(timer)
   }, [toast])
+
+  useEffect(() => {
+    if (!selectedActivity) return
+    if (form.tipoPago !== 'Saldo') return
+    const saldo = Number(selectedActivity.saldoRestante ?? 0)
+    if (saldo <= 0) return
+    const montoActual = Number(form.monto)
+    if (Number.isNaN(montoActual) || Math.abs(montoActual - saldo) > 0.01) {
+      setForm(prev => ({ ...prev, monto: String(saldo.toFixed(2)) }))
+    }
+  }, [form.tipoPago, form.monto, selectedActivity])
 
   const paymentColumns = useMemo(
     () => [
@@ -267,6 +456,15 @@ export default function AdminPayments(){
         render: (pago) => (
           <div className="text-right">
             <p className="text-sm font-semibold text-umber">{formatCurrency(pago.monto)}</p>
+          </div>
+        )
+      },
+      {
+        id: 'tipo',
+        label: 'Tipo',
+        render: (pago) => (
+          <div className="space-y-1 text-sm text-slate-600">
+            <p className="font-medium text-umber">{pago.tipoPago || 'Pago'}</p>
             <p className="text-xs text-slate-500">{pago.metodoPago}</p>
           </div>
         )
@@ -277,7 +475,9 @@ export default function AdminPayments(){
         render: (pago) => (
           <div className="space-y-1 text-sm text-slate-600">
             <p className="font-medium text-umber">{formatDate(pago.fechaPago)}</p>
-            <span className="inline-flex w-fit items-center rounded-full bg-[#f3e6d6] px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[#5b4636]">
+            <span
+              className={`inline-flex w-fit items-center rounded-full px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.25em] ${pago.estadoPagoInfo?.badgeClass || 'bg-amber-100 text-amber-700'}`}
+            >
               {pago.estadoPago}
             </span>
           </div>
@@ -288,13 +488,23 @@ export default function AdminPayments(){
         label: 'Acciones',
         align: 'right',
         render: (pago) => (
-          <button type="button" className="btn btn-ghost" onClick={() => handleViewInvoice(pago)}>
-            Ver factura
-          </button>
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn btn-ghost" onClick={() => handleViewInvoice(pago)}>
+              Ver factura
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost text-red-600 hover:text-red-700"
+              onClick={() => handleDeletePayment(pago)}
+              disabled={deletingPaymentId === pago.id}
+            >
+              {deletingPaymentId === pago.id ? 'Eliminando…' : 'Eliminar'}
+            </button>
+          </div>
         )
       }
     ],
-    [handleViewInvoice]
+    [deletingPaymentId, handleDeletePayment, handleViewInvoice]
   )
 
   const onSubmit = async (event) => {
@@ -318,29 +528,26 @@ export default function AdminPayments(){
       return
     }
 
+    const tipoPagoValido = PAYMENT_TYPES.some(tipo => tipo.value === form.tipoPago)
+    if (!tipoPagoValido) {
+      setFeedback({ type: 'error', message: 'Selecciona un tipo de pago válido.' })
+      return
+    }
+
     setSaving(true)
 
     const actividadId = Number(form.idactividad)
+    const actividadSeleccionada = activitiesMap.get(actividadId) || null
+    const pagosPrevios = paymentsByActivity.get(actividadId) || []
+    const precioPaquete = actividadSeleccionada ? Number(actividadSeleccionada.paquetePrecio ?? 0) : 0
+    const totalPrevio = pagosPrevios.reduce((acc, pago) => acc + (Number(pago?.monto) || 0), 0)
+    const totalSimulado = totalPrevio + monto
 
-    if (!form.esAbono) {
-      const { data: existingPayments = [], error: existingError } = await supabase
-        .from('pago')
-        .select('id')
-        .eq('idactividad', actividadId)
-        .limit(1)
-
-      if (existingError) {
-        console.error('Error verificando duplicados de pago', existingError)
-      }
-
-      if ((existingPayments ?? []).length) {
-        setFeedback({
-          type: 'warning',
-          message: 'Esta actividad ya tiene un pago. Marca la opción "Registrar como abono" si deseas registrar un abono.'
-        })
-        setSaving(false)
-        return
-      }
+    let pagoEstadoId = paymentStateIds.anticipo
+    if (form.tipoPago === 'Anticipo') {
+      pagoEstadoId = paymentStateIds.anticipo
+    } else if (precioPaquete <= 0 || totalSimulado >= precioPaquete) {
+      pagoEstadoId = paymentStateIds.pagado
     }
 
     let fechaPago = form.fechaPago instanceof Date ? new Date(form.fechaPago) : null
@@ -362,13 +569,15 @@ export default function AdminPayments(){
       metodo_pago: form.metodo || PAYMENT_METHODS[0].value,
       monto,
       fecha_pago: fechaPago.toISOString(),
-      detalle_pago: form.detalle ? form.detalle.trim() : null
+      detalle_pago: form.detalle ? form.detalle.trim() : null,
+      tipo_pago: form.tipoPago,
+      idestado_pago: pagoEstadoId
     }
 
     const { data, error } = await supabase
       .from('pago')
       .insert([payload])
-      .select('id, idactividad, monto, metodo_pago, fecha_pago, detalle_pago')
+      .select('id, idactividad, monto, metodo_pago, fecha_pago, detalle_pago, tipo_pago, idestado_pago')
       .single()
 
     if (error || !data) {
@@ -378,9 +587,15 @@ export default function AdminPayments(){
       return
     }
 
-    await supabase.from('actividad').update({ estado_pago: 'Pagado' }).eq('id', actividadId)
+    const pagosSimulados = [...pagosPrevios, { monto }]
+    try {
+      await syncActivityPaymentState(actividadId, pagosSimulados, precioPaquete)
+    } catch (syncError) {
+      console.error('No se pudo actualizar el estado de la actividad después del pago.', syncError)
+    }
 
-    const actividadAsociada = activitiesMap.get(actividadId) || null
+    const estadoPagoInfo = getPaymentStateClasses(data.idestado_pago || pagoEstadoId, paymentStates)
+    const actividadAsociada = activitiesMap.get(actividadId) || actividadSeleccionada
     const nuevoPago = {
       id: data.id,
       actividadId: data.idactividad,
@@ -388,9 +603,12 @@ export default function AdminPayments(){
       monto: Number(data.monto ?? 0),
       fechaPago: data.fecha_pago,
       detallePago: data.detalle_pago || '',
+      tipoPago: data.tipo_pago || form.tipoPago,
+      estadoPago: estadoPagoInfo.label,
+      estadoPagoId: estadoPagoInfo.id,
+      estadoPagoInfo,
       cliente: actividadAsociada?.cliente || 'Cliente sin nombre',
       paquete: actividadAsociada?.paquete || 'Paquete sin definir',
-      estadoPago: actividadAsociada?.estadoPago || 'Pagado',
       agendaFecha: actividadAsociada?.agendaFecha || null,
       agendaHora: actividadAsociada?.agendaHora || null,
       actividad: actividadAsociada || null
@@ -450,21 +668,84 @@ export default function AdminPayments(){
               </select>
             </label>
 
-            {hasPreviousPayment && (
-              <p className="admin-field-hint">
-                Esta reserva ya tiene {existingPaymentsForSelected.length} pago(s) registrado(s). Activa la casilla de abono para añadir otro.
-              </p>
-            )}
+            {selectedActivity && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold text-amber-900">Progreso de pago</span>
+                  <span className="text-xs uppercase tracking-[0.3em] text-amber-700">
+                    {Math.round(selectedProgress.percentage)}% pagado
+                  </span>
+                </div>
+                <div className="mt-2 h-2 rounded-full bg-white/80">
+                  <div
+                    className="h-full rounded-full bg-amber-500 transition-all"
+                    style={{ width: `${Math.max(0, Math.min(100, selectedProgress.percentage || 0))}%` }}
+                  />
+                </div>
+                <dl className="mt-3 grid gap-3 text-xs text-amber-800 sm:grid-cols-2">
+                  <div>
+                    <dt className="uppercase tracking-[0.2em] text-amber-700">Total del paquete</dt>
+                    <dd className="font-semibold">{formatCurrency(selectedActivity.paquetePrecio)}</dd>
+                  </div>
+                  <div>
+                    <dt className="uppercase tracking-[0.2em] text-amber-700">Pagado</dt>
+                    <dd className="font-semibold">{formatCurrency(selectedProgress.total)}</dd>
+                  </div>
+                  <div>
+                    <dt className="uppercase tracking-[0.2em] text-amber-700">Saldo pendiente</dt>
+                    <dd className="font-semibold">{formatCurrency(selectedProgress.remaining)}</dd>
+                  </div>
+                  <div>
+                    <dt className="uppercase tracking-[0.2em] text-amber-700">Estado</dt>
+                    <dd>
+                      <span
+                        className={`inline-flex items-center rounded-full px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.25em] ${selectedActivity.estadoPagoInfo?.badgeClass || 'bg-amber-100 text-amber-700'}`}
+                      >
+                        {selectedActivity.estadoPago}
+                      </span>
+                    </dd>
+                  </div>
+                </dl>
 
-            {hasPreviousPayment && (
-              <label className="admin-checkbox">
-                <input
-                  type="checkbox"
-                  checked={form.esAbono}
-                  onChange={event => updateField('esAbono', event.target.checked)}
-                />
-                <span>Registrar como abono</span>
-              </label>
+                <div className="mt-4 space-y-2">
+                  <h4 className="text-sm font-semibold text-amber-900">Pagos registrados</h4>
+                  {existingPaymentsForSelected.length ? (
+                    existingPaymentsForSelected.map(pago => (
+                      <div
+                        key={pago.id}
+                        className="rounded-xl border border-amber-200 bg-white/80 p-3 shadow-sm"
+                      >
+                        <div className="flex items-center justify-between text-sm font-semibold text-amber-900">
+                          <span>{pago.tipoPago || 'Pago'}</span>
+                          <span>{formatCurrency(pago.monto)}</span>
+                        </div>
+                        <p className="text-xs text-amber-700">{formatDate(pago.fechaPago)}</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[0.65rem] font-semibold uppercase tracking-[0.25em]">
+                          <span className={`inline-flex rounded-full px-2 py-1 ${pago.estadoPagoInfo?.badgeClass || 'bg-amber-100 text-amber-700'}`}>
+                            {pago.estadoPago}
+                          </span>
+                          <span className="inline-flex rounded-full bg-amber-100 px-2 py-1 text-amber-700">{pago.metodoPago}</span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                          <button type="button" className="btn btn-ghost" onClick={() => handleViewInvoice(pago)}>
+                            Ver
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost text-red-600 hover:text-red-700"
+                            onClick={() => handleDeletePayment(pago)}
+                            disabled={deletingPaymentId === pago.id}
+                          >
+                            {deletingPaymentId === pago.id ? 'Eliminando…' : 'Eliminar'}
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-amber-700">Todavía no hay pagos registrados para esta reserva.</p>
+                  )}
+                </div>
+              </div>
             )}
 
             <label className="grid gap-1 text-sm">
@@ -476,6 +757,19 @@ export default function AdminPayments(){
               >
                 {PAYMENT_METHODS.map(metodo => (
                   <option key={metodo.value} value={metodo.value}>{metodo.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid gap-1 text-sm">
+              <span className="font-medium text-slate-700">Tipo de pago</span>
+              <select
+                value={form.tipoPago}
+                onChange={event => updateField('tipoPago', event.target.value)}
+                className="admin-field-select"
+              >
+                {PAYMENT_TYPES.map(tipo => (
+                  <option key={tipo.value} value={tipo.value}>{tipo.label}</option>
                 ))}
               </select>
             </label>
@@ -625,6 +919,15 @@ export default function AdminPayments(){
             <div><strong>Paquete:</strong> {selectedInvoice.actividad?.paquete || selectedInvoice.pago?.paquete}</div>
             <div><strong>Monto:</strong> {formatCurrency(selectedInvoice.pago?.monto)}</div>
             <div><strong>Método:</strong> {selectedInvoice.pago?.metodoPago}</div>
+            <div><strong>Tipo de pago:</strong> {selectedInvoice.pago?.tipoPago || 'Pago'}</div>
+            <div>
+              <strong>Estado:</strong>{' '}
+              <span
+                className={`inline-flex items-center rounded-full px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.25em] ${selectedInvoice.pago?.estadoPagoInfo?.badgeClass || 'bg-amber-100 text-amber-700'}`}
+              >
+                {selectedInvoice.pago?.estadoPago || 'Pendiente'}
+              </span>
+            </div>
             <div><strong>Fecha de pago:</strong> {formatDate(selectedInvoice.pago?.fechaPago)}</div>
             {selectedInvoice.pago?.detallePago && (
               <div><strong>Detalle:</strong> {selectedInvoice.pago.detallePago}</div>
