@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import AdminHelpCard from '../components/AdminHelpCard'
+import AdminDataTable from '../components/AdminDataTable'
 
 const defaultForm = { id: null, nombrecompleto: '', telefono: '', correo: '' }
 
@@ -258,6 +259,67 @@ export default function AdminClients(){
     if (form.id === id) resetForm()
   }
 
+  const clientColumns = useMemo(
+    () => [
+      {
+        id: 'cliente',
+        label: 'Cliente',
+        render: (cliente) => (
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-umber">{cliente.nombrecompleto}</p>
+            <p className="text-xs text-slate-500">{cliente.correo || 'Sin correo registrado'}</p>
+            <p className="text-xs text-slate-500">{cliente.telefono || 'Sin teléfono registrado'}</p>
+          </div>
+        )
+      },
+      {
+        id: 'estado',
+        label: 'Estado',
+        render: (cliente) => (
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
+            <span className="inline-flex w-fit items-center rounded-full bg-[#f3e6d6] px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[#5b4636]">
+              {cliente.estadoNombre || 'Sin estado'}
+            </span>
+            <select
+              className="rounded-2xl border border-[color:var(--border)] bg-white px-3 py-2 text-sm shadow-sm"
+              value={cliente.estadoId || ''}
+              onChange={event => onChangeEstado(cliente, event.target.value ? Number(event.target.value) : null)}
+              disabled={updatingStatusId === cliente.id}
+            >
+              <option value="">Sin estado</option>
+              {estadoOptions.map(estado => (
+                <option key={estado.id} value={estado.id}>{estado.nombre_estado}</option>
+              ))}
+            </select>
+          </div>
+        )
+      },
+      {
+        id: 'registro',
+        label: 'Registro',
+        hideOnMobile: true,
+        render: (cliente) => (
+          <span className="text-sm text-slate-600">
+            {cliente.fecharegistro ? new Date(cliente.fecharegistro).toLocaleDateString('es-GT') : '—'}
+          </span>
+        )
+      },
+      {
+        id: 'acciones',
+        label: 'Acciones',
+        align: 'right',
+        render: (cliente) => (
+          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:justify-end">
+            <button type="button" className="btn btn-ghost" onClick={() => openHistory(cliente)}>Historial</button>
+            <button type="button" className="btn btn-ghost" onClick={() => onEdit(cliente)}>Editar</button>
+            <button type="button" className="btn btn-ghost" onClick={() => onDelete(cliente.id)}>Eliminar</button>
+          </div>
+        )
+      }
+    ],
+    [estadoOptions, onChangeEstado, openHistory, onEdit, onDelete, updatingStatusId]
+  )
+
   const totalClientes = useMemo(() => clientes.length, [clientes])
   const clientesConTelefono = useMemo(() => clientes.filter(cliente => cliente.telefono).length, [clientes])
   const clientesConCorreo = useMemo(() => clientes.filter(cliente => cliente.correo).length, [clientes])
@@ -356,55 +418,12 @@ export default function AdminClients(){
         {loading ? (
           <p className="muted text-sm">Cargando clientes…</p>
         ) : clientes.length ? (
-          <div className="table-responsive">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th className="p-2">Nombre</th>
-                  <th className="p-2">Teléfono</th>
-                  <th className="p-2">Correo</th>
-                  <th className="p-2">Estado</th>
-                  <th className="p-2">Registro</th>
-                  <th className="p-2 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {clientes.map(cliente => (
-                  <tr key={cliente.id}>
-                    <td className="p-2 font-medium text-slate-700">{cliente.nombrecompleto}</td>
-                    <td className="p-2">{cliente.telefono || '—'}</td>
-                    <td className="p-2">{cliente.correo || '—'}</td>
-                    <td className="p-2">
-                      <div className="flex items-center gap-2">
-                        <span className="badge-soft">
-                          {estadoOptions.find(estado => estado.id === cliente.estadoId)?.nombre_estado || 'Sin estado'}
-                        </span>
-                        <select
-                          value={cliente.estadoId || ''}
-                          onChange={(event) => onChangeEstado(cliente, event.target.value ? Number(event.target.value) : null)}
-                          className="border rounded-xl2 px-2 py-1 text-xs"
-                          disabled={updatingStatusId === cliente.id}
-                        >
-                          <option value="">Sin estado</option>
-                          {estadoOptions.map(estado => (
-                            <option key={estado.id} value={estado.id}>{estado.nombre_estado}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </td>
-                    <td className="p-2">{cliente.fecharegistro ? new Date(cliente.fecharegistro).toLocaleDateString('es-GT') : '—'}</td>
-                    <td className="p-2">
-                      <div className="flex justify-end gap-2">
-                        <button type="button" className="btn btn-ghost" onClick={() => openHistory(cliente)}>Historial</button>
-                        <button type="button" className="btn btn-ghost" onClick={() => onEdit(cliente)}>Editar</button>
-                        <button type="button" className="btn btn-ghost" onClick={() => onDelete(cliente.id)}>Eliminar</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <AdminDataTable
+            columns={clientColumns}
+            rows={clientes}
+            rowKey={cliente => cliente.id}
+            caption={`Clientes registrados: ${clientes.length}`}
+          />
         ) : (
           <p className="muted text-sm">No has registrado clientes todavía.</p>
         )}

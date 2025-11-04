@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import AdminHelpCard from '../components/AdminHelpCard'
+import AdminDataTable from '../components/AdminDataTable'
+import AdminDatePicker from '../components/AdminDatePicker'
 
 const estadoColorStyles = {
   pendiente: { bg: '#FFF8E1', text: '#8A6D3B' },
@@ -16,10 +18,8 @@ const defaultFilters = {
   search: '',
   estado: 'all',
   fotografo: 'all',
-  fecha: ''
+  fecha: null
 }
-
-const ITEMS_PER_PAGE = 10
 
 function normalize(value) {
   if (!value) return ''
@@ -58,6 +58,21 @@ function getEstadoStyles(nombre) {
   return estadoColorStyles[key] || { bg: '#EEE0D1', text: '#5B4636' }
 }
 
+function toDate(value) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return date
+}
+
+function isSameDay(dateValue, targetDate) {
+  if (!dateValue || !targetDate) return false
+  const dateA = toDate(dateValue)
+  const dateB = toDate(targetDate)
+  if (!dateA || !dateB) return false
+  return dateA.toISOString().slice(0, 10) === dateB.toISOString().slice(0, 10)
+}
+
 export default function AdminReservations() {
   const [reservas, setReservas] = useState([])
   const [estados, setEstados] = useState([])
@@ -66,7 +81,6 @@ export default function AdminReservations() {
   const [feedback, setFeedback] = useState({ type: '', message: '' })
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState(null)
-  const [currentPage, setCurrentPage] = useState(1)
 
   const reservadaEstadoId = useMemo(() => {
     const estado = estados.find(item => normalize(item?.nombre_estado) === 'reservada')
@@ -184,9 +198,7 @@ export default function AdminReservations() {
       const matchesFotografo =
         filters.fotografo === 'all' || String(reserva.fotografoId ?? '') === String(filters.fotografo)
 
-      const matchesFecha =
-        !filters.fecha ||
-        (reserva.fecha && new Date(reserva.fecha).toISOString().startsWith(filters.fecha))
+      const matchesFecha = !filters.fecha || isSameDay(reserva.fecha, filters.fecha)
 
       return matchesSearch && matchesEstado && matchesFotografo && matchesFecha
     })
@@ -200,26 +212,93 @@ export default function AdminReservations() {
     return Array.from(unique.entries()).map(([id, nombre]) => ({ id, nombre }))
   }, [reservas])
 
-  const totalPages = Math.max(1, Math.ceil(filteredReservas.length / ITEMS_PER_PAGE))
-  const safePage = Math.min(currentPage, totalPages)
-  const startIndex = (safePage - 1) * ITEMS_PER_PAGE
-  const endIndex = startIndex + ITEMS_PER_PAGE
-  const paginatedReservas = filteredReservas.slice(startIndex, endIndex)
-  const showingFrom = filteredReservas.length ? startIndex + 1 : 0
-  const showingTo = filteredReservas.length ? Math.min(endIndex, filteredReservas.length) : 0
-  const pages = Array.from({ length: totalPages }, (_, index) => index + 1)
-  const canGoPrevious = safePage > 1
-  const canGoNext = safePage < totalPages
+  const reservasColumns = useMemo(
+    () => [
+      {
+        id: 'reserva',
+        label: 'Reserva',
+        render: (reserva) => (
+          <div className="space-y-1">
+            <span className="text-sm font-semibold text-umber">#{reserva.id}</span>
+            <p className="text-sm text-slate-600">{reserva.cliente}</p>
+            <p className="text-xs text-slate-500">{reserva.paquete}</p>
+          </div>
+        )
+      },
+      {
+        id: 'programacion',
+        label: 'Programación',
+        render: (reserva) => {
+          const fotografoNombre = reserva.fotografo && reserva.fotografo !== 'Sin asignar'
+            ? reserva.fotografo
+            : 'Por asignar'
+          return (
+            <div className="space-y-1 text-sm text-slate-600">
+              <p className="font-semibold text-umber">{formatDate(reserva.fecha)}</p>
+              <p className="text-xs text-slate-500">{formatTimeRange(reserva.horaInicio, reserva.horaFin)}</p>
+              <p className="text-xs text-slate-500">Fotógrafo: {fotografoNombre}</p>
+            </div>
+          )
+        }
+      },
+      {
+        id: 'estado',
+        label: 'Estado actual',
+        hideOnMobile: true,
+        render: (reserva) => {
+          const estadoStyles = getEstadoStyles(reserva.estadoNombre)
+          return (
+            <span
+              className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em]"
+              style={{ backgroundColor: estadoStyles.bg, color: estadoStyles.text }}
+            >
+              {reserva.estadoNombre}
+            </span>
+          )
+        }
+      },
+      {
+        id: 'acciones',
+        label: 'Actualizar estado',
+        render: (reserva) => {
+          const estadoActual = normalize(reserva.estadoNombre)
+          const entregada = estadoActual === 'entregada'
+          const selectedValue = selection[reserva.id] ?? ''
+          const hasSelection = selectedValue !== ''
+          const sameEstado =
+            hasSelection && reserva.estadoId != null && Number(selectedValue) === Number(reserva.estadoId)
+          const disableAction = entregada || updatingId === reserva.id
 
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [filters.search, filters.estado, filters.fotografo, filters.fecha])
-
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages)
-    }
-  }, [currentPage, totalPages])
+          return (
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+              <select
+                className="rounded-2xl border border-[color:var(--border)] bg-white px-3 py-2 text-sm shadow-sm"
+                value={selectedValue}
+                onChange={event => onSelectEstado(reserva.id, event.target.value)}
+                disabled={entregada}
+              >
+                <option value="">Selecciona un estado</option>
+                {estados.map(estado => (
+                  <option key={estado.id} value={estado.id}>
+                    {estado.nombre_estado}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => actualizarEstado(reserva)}
+                disabled={disableAction || !hasSelection || sameEstado}
+              >
+                {updatingId === reserva.id ? 'Guardando…' : 'Confirmar cambio'}
+              </button>
+            </div>
+          )
+        }
+      }
+    ],
+    [estados, selection, updatingId]
+  )
 
   const onFilterChange = (field, value) => {
     setFilters(prev => ({ ...prev, [field]: value }))
@@ -334,15 +413,12 @@ export default function AdminReservations() {
             </select>
           </label>
 
-          <label className="grid gap-1 text-sm">
-            <span className="font-medium text-slate-700">Filtrar por fecha</span>
-            <input
-              type="date"
-              className="border rounded-xl2 px-3 py-2"
-              value={filters.fecha}
-              onChange={event => onFilterChange('fecha', event.target.value)}
-            />
-          </label>
+          <AdminDatePicker
+            label="Filtrar por fecha"
+            value={filters.fecha}
+            onChange={date => onFilterChange('fecha', date ?? null)}
+            placeholder="Selecciona un día"
+          />
         </div>
 
         {feedback.message && (
@@ -372,128 +448,12 @@ export default function AdminReservations() {
         {loading ? (
           <p className="muted text-sm">Cargando reservas…</p>
         ) : filteredReservas.length ? (
-          <div className="admin-table-container">
-            <div className="admin-table-scroll">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th scope="col">ID</th>
-                    <th scope="col">Cliente</th>
-                    <th scope="col">Fotógrafo</th>
-                    <th scope="col">Paquete</th>
-                    <th scope="col">Fecha</th>
-                    <th scope="col">Horario</th>
-                    <th scope="col">Estado actual</th>
-                    <th scope="col">Actualizar estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedReservas.map(reserva => {
-                    const estadoStyles = getEstadoStyles(reserva.estadoNombre)
-                    const estadoActual = normalize(reserva.estadoNombre)
-                    const entregada = estadoActual === 'entregada'
-                    const selectedValue = selection[reserva.id] ?? ''
-                    const hasSelection = selectedValue !== ''
-                    const sameEstado =
-                      hasSelection && reserva.estadoId != null && Number(selectedValue) === Number(reserva.estadoId)
-                    const disableAction = entregada || updatingId === reserva.id
-
-                    return (
-                      <tr key={reserva.id}>
-                        <td data-label="ID">
-                          <span className="font-semibold text-umber">#{reserva.id}</span>
-                        </td>
-                        <td data-label="Cliente">
-                          <div className="font-medium text-umber">{reserva.cliente}</div>
-                          <div className="text-xs text-slate-500">Agenda #{reserva.agendaId ?? '—'}</div>
-                        </td>
-                        <td data-label="Fotógrafo" className="text-slate-600">
-                          {reserva.fotografo}
-                        </td>
-                        <td data-label="Paquete" className="text-slate-600">
-                          {reserva.paquete}
-                        </td>
-                        <td data-label="Fecha" className="text-slate-600">
-                          {formatDate(reserva.fecha)}
-                        </td>
-                        <td data-label="Horario" className="text-slate-600">
-                          {formatTimeRange(reserva.horaInicio, reserva.horaFin)}
-                        </td>
-                        <td data-label="Estado actual">
-                          <span
-                            className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em]"
-                            style={{ backgroundColor: estadoStyles.bg, color: estadoStyles.text }}
-                          >
-                            {reserva.estadoNombre}
-                          </span>
-                        </td>
-                        <td data-label="Actualizar estado">
-                          <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
-                            <select
-                              className="border rounded-xl2 px-3 py-2 text-sm"
-                              value={selectedValue}
-                              onChange={event => onSelectEstado(reserva.id, event.target.value)}
-                              disabled={entregada}
-                            >
-                              <option value="">Selecciona un estado</option>
-                              {estados.map(estado => (
-                                <option key={estado.id} value={estado.id}>
-                                  {estado.nombre_estado}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              type="button"
-                              className="btn btn-primary"
-                              onClick={() => actualizarEstado(reserva)}
-                              disabled={disableAction || !hasSelection || sameEstado}
-                            >
-                              {updatingId === reserva.id ? 'Guardando…' : 'Confirmar cambio'}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div className="pagination">
-              <span className="pagination__summary">
-                Mostrando {showingFrom.toLocaleString('es-GT')}–{showingTo.toLocaleString('es-GT')} de{' '}
-                {filteredReservas.length.toLocaleString('es-GT')} resultados
-              </span>
-              <div className="pagination__buttons">
-                <button
-                  type="button"
-                  onClick={() => canGoPrevious && setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={!canGoPrevious}
-                  aria-label="Página anterior"
-                >
-                  Anterior
-                </button>
-                {pages.map(page => (
-                  <button
-                    key={page}
-                    type="button"
-                    onClick={() => setCurrentPage(page)}
-                    className={page === safePage ? 'active' : ''}
-                    aria-current={page === safePage ? 'page' : undefined}
-                  >
-                    {page}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => canGoNext && setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={!canGoNext}
-                  aria-label="Página siguiente"
-                >
-                  Siguiente
-                </button>
-              </div>
-            </div>
-          </div>
+          <AdminDataTable
+            columns={reservasColumns}
+            rows={filteredReservas}
+            rowKey={reserva => reserva.id}
+            caption={`Total de reservas: ${filteredReservas.length}`}
+          />
         ) : (
           <p className="muted text-sm">No hay reservas que coincidan con los filtros seleccionados.</p>
         )}

@@ -1,6 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import AdminHelpCard from '../components/AdminHelpCard'
+import AdminDataTable from '../components/AdminDataTable'
+
+function formatDate(value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleDateString('es-GT')
+}
 
 export default function AdminReviews(){
   const [resenas, setResenas] = useState([])
@@ -48,6 +56,44 @@ export default function AdminReviews(){
     setRefreshing(false)
   }
 
+  const reviewColumns = useMemo(
+    () => [
+      {
+        id: 'calificacion',
+        label: 'Calificación',
+        render: (resena) => (
+          <span className="text-sm font-semibold text-umber">{resena.calificacion} ★</span>
+        )
+      },
+      {
+        id: 'comentario',
+        label: 'Comentario',
+        render: (resena) => (
+          <p className="text-sm text-slate-600 whitespace-pre-line">{resena.comentario || 'Sin comentario'}</p>
+        )
+      },
+      {
+        id: 'fecha',
+        label: 'Fecha',
+        hideOnMobile: true,
+        render: (resena) => (
+          <span className="text-sm text-slate-500">{formatDate(resena.fecha_resena)}</span>
+        )
+      },
+      {
+        id: 'acciones',
+        label: 'Acciones',
+        align: 'right',
+        render: (resena) => (
+          <button type="button" className="btn btn-ghost" onClick={() => onDelete(resena.id)}>
+            Eliminar
+          </button>
+        )
+      }
+    ],
+    [onDelete]
+  )
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
@@ -87,19 +133,12 @@ export default function AdminReviews(){
         {loading ? (
           <p className="muted text-sm">Cargando reseñas…</p>
         ) : resenas.length ? (
-          <div className="grid gap-4 md:grid-cols-2">
-            {resenas.map(resena => (
-              <article key={resena.id} className="card border border-[var(--border)] p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-lg font-semibold text-umber">{resena.calificacion} ★</span>
-                  <div className="flex gap-2">
-                    <button type="button" className="btn btn-ghost" onClick={() => onDelete(resena.id)}>Eliminar</button>
-                  </div>
-                </div>
-                <p className="text-sm text-slate-600 whitespace-pre-line">{resena.comentario || 'Sin comentario'}</p>
-              </article>
-            ))}
-          </div>
+          <AdminDataTable
+            columns={reviewColumns}
+            rows={resenas}
+            rowKey={resena => resena.id}
+            caption={`Reseñas registradas: ${resenas.length}`}
+          />
         ) : (
           <p className="muted text-sm">No hay reseñas registradas todavía.</p>
         )}
