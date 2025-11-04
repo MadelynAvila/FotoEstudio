@@ -278,6 +278,11 @@ const initialForm = {
   fotografoId: ''
 }
 
+const PAYMENT_METHODS = [
+  { value: 'Transferencia', label: 'Transferencia bancaria' },
+  { value: 'Efectivo', label: 'Efectivo' }
+]
+
 export default function Booking() {
   const [form, setForm] = useState(initialForm)
   const [paquetes, setPaquetes] = useState([])
@@ -677,6 +682,12 @@ export default function Booking() {
       return
     }
 
+    const metodoPagoValido = PAYMENT_METHODS.some((metodo) => metodo.value === formaPago)
+    if (!metodoPagoValido) {
+      setError('Selecciona un método de pago válido (Efectivo o Transferencia bancaria).')
+      return
+    }
+
     const fechaSeleccionada = normalizarFechaInput(fecha)
     const rangoDiaSeleccionado = obtenerRangoDiaUTC(fechaSeleccionada)
     if (!fechaSeleccionada || !rangoDiaSeleccionado) {
@@ -1065,9 +1076,9 @@ export default function Booking() {
               disabled={!user || enviando}
             >
               <option value="">Selecciona la forma de pago</option>
-              <option value="Transferencia">Transferencia</option>
-              <option value="Tarjeta">Tarjeta</option>
-              <option value="Efectivo">Efectivo</option>
+              {PAYMENT_METHODS.map((metodo) => (
+                <option key={metodo.value} value={metodo.value}>{metodo.label}</option>
+              ))}
             </select>
 
             <div

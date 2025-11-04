@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import AdminHelpCard from '../components/AdminHelpCard'
 
-const defaultForm = { idactividad: '', monto: '', metodo: 'Transferencia' }
+const PAYMENT_METHODS = [
+  { value: 'Transferencia', label: 'Transferencia bancaria' },
+  { value: 'Efectivo', label: 'Efectivo' }
+]
+
+const defaultForm = { idactividad: '', monto: '', metodo: PAYMENT_METHODS[0].value }
 
 function formatDate(value) {
   if (!value) return '—'
@@ -75,10 +80,16 @@ export default function AdminPayments(){
       return
     }
 
+    const metodoValido = PAYMENT_METHODS.some((metodo) => metodo.value === form.metodo)
+    if (!metodoValido) {
+      setFeedback({ type: 'error', message: 'Selecciona un método de pago válido (Efectivo o Transferencia bancaria).' })
+      return
+    }
+
     setSaving(true)
     const payload = {
       idactividad: Number(form.idactividad),
-      metodo_pago: form.metodo || 'Transferencia',
+      metodo_pago: form.metodo || PAYMENT_METHODS[0].value,
       monto,
       detalle_pago: null
     }
@@ -161,9 +172,9 @@ export default function AdminPayments(){
                 onChange={event => updateField('metodo', event.target.value)}
                 className="border rounded-xl2 px-3 py-2"
               >
-                <option value="Transferencia">Transferencia</option>
-                <option value="Efectivo">Efectivo</option>
-                <option value="Tarjeta">Tarjeta</option>
+                {PAYMENT_METHODS.map((metodo) => (
+                  <option key={metodo.value} value={metodo.value}>{metodo.label}</option>
+                ))}
               </select>
             </label>
             <label className="grid gap-1 text-sm">
