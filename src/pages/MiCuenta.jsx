@@ -1,6 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../auth/authContext'
 import { supabase } from '../lib/supabaseClient'
+import DEFAULT_PAYMENT_STATES, {
+  calculatePaymentProgress,
+  getPaymentStateClasses
+} from '../lib/paymentStates'
 
 const defaultReviewForm = { calificacion: '5', comentario: '' }
 
@@ -65,6 +69,13 @@ const formatDate = (dateString, variant = 'long') => {
   return new Intl.DateTimeFormat('es-ES', options).format(date)
 }
 
+const formatDateTime = (value) => {
+  if (!value) return 'Fecha no disponible'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Fecha no disponible'
+  return new Intl.DateTimeFormat('es-GT', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+}
+
 const formatHour = (timeString) => {
   if (!timeString) return '--:--'
   const [hours, minutes] = timeString.split(':')
@@ -99,6 +110,7 @@ export default function MiCuenta () {
   const [submitting, setSubmitting] = useState(false)
   const [hoverRating, setHoverRating] = useState(null)
   const [estadosActividad, setEstadosActividad] = useState([])
+  const [paymentStates, setPaymentStates] = useState(DEFAULT_PAYMENT_STATES)
 
   const fetchEstadosActividad = async () => {
     const { data, error } = await supabase
@@ -118,7 +130,36 @@ export default function MiCuenta () {
     setEstadosActividad(estadosOrdenados)
   }
 
-  const fetchReservas = async () => {
+  const fetchEstadosPago = async () => {
+    const { data, error } = await supabase
+      .from('estado_pago')
+      .select('id, nombre_estado, descripcion_estado, orden')
+      .order('orden', { ascending: true })
+
+    if (error) {
+      console.warn('No se pudieron cargar los estados de pago', error)
+      setPaymentStates(DEFAULT_PAYMENT_STATES)
+      return
+    }
+
+    if (Array.isArray(data) && data.length) {
+      const estados = data.map(estado => {
+        const info = getPaymentStateClasses(estado.nombre_estado || estado.id, DEFAULT_PAYMENT_STATES)
+        return {
+          ...estado,
+          key: info.key,
+          label: estado.nombre_estado || info.label,
+          badgeClass: info.badgeClass,
+          textClass: info.textClass
+        }
+      })
+      setPaymentStates(estados)
+    } else {
+      setPaymentStates(DEFAULT_PAYMENT_STATES)
+    }
+  }
+
+  const fetchReservas = useCallback(async () => {
     if (!user) return
     setLoading(true)
     const { data, error } = await supabase
@@ -126,9 +167,10 @@ export default function MiCuenta () {
       .select(`
         id,
         idestado_actividad,
+        idestado_pago,
         nombre_actividad,
         ubicacion,
-        estado_pago,
+        estado_pago:estado_pago ( id, nombre_estado ),
         paquete:paquete(nombre_paquete, precio),
         agenda:agenda(
           id,
@@ -138,7 +180,15 @@ export default function MiCuenta () {
           fotografo:usuario(username)
         ),
         estado_actividad:estado_actividad(id, nombre_estado, orden),
-        pago:pago(metodo_pago, monto)
+        pago:pago(
+          id,
+          metodo_pago,
+          monto,
+          fecha_pago,
+          tipo_pago,
+          idestado_pago,
+          estado_pago:estado_pago ( id, nombre_estado )
+        )
       `)
       .eq('idusuario', user.id)
       .order('fecha', { foreignTable: 'agenda', ascending: false, nullsLast: true })
@@ -148,36 +198,97 @@ export default function MiCuenta () {
       console.error('No se pudieron cargar las reservas del usuario', error)
       setReservas([])
       setFeedback({ type: 'error', message: 'No pudimos cargar tus reservas. Intenta nuevamente en unos minutos.' })
-    } else {
-      const baseReservas = Array.isArray(data) ? data : []
-
-      const reservasConResena = await Promise.all(baseReservas.map(async (reserva) => {
-        const { data: resenasData, error: resenasError } = await supabase
-          .from('resena')
-          .select('id, calificacion, comentario, fecha_resena')
-          .eq('idactividad', reserva.id)
-          .eq('idusuario', user.id)
-
-        if (resenasError) {
-          console.error('No se pudo verificar la reseña del usuario', resenasError)
-          return { ...reserva, resenas: [] }
-        }
-
-        return { ...reserva, resenas: Array.isArray(resenasData) ? resenasData : [] }
-      }))
-
-      setReservas(reservasConResena)
+      setLoading(false)
+      return
     }
+
+    const baseReservas = Array.isArray(data) ? data : []
+
+    const reservasConResena = await Promise.all(baseReservas.map(async (reserva) => {
+      const agenda = normalizeSingle(reserva.agenda)
+      const paquete = normalizeSingle(reserva.paquete)
+      const estadoActividad = normalizeSingle(reserva.estado_actividad)
+
+      const pagos = ensureArray(reserva.pago)
+        .map(pago => {
+          const estadoPagoInfo = getPaymentStateClasses(
+            pago.estado_pago?.nombre_estado || pago.estado_pago || pago.idestado_pago,
+            paymentStates
+          )
+          const metodoNormalizado = normalizeEstadoNombre(pago.metodo_pago)
+          const metodoDisplay = allowedPaymentMethods[metodoNormalizado] || pago.metodo_pago || 'Método no especificado'
+          return {
+            ...pago,
+            tipo_pago: pago.tipo_pago || 'Pago',
+            monto: Number(pago.monto ?? 0),
+            estadoPagoInfo,
+            estado_pago: estadoPagoInfo.label,
+            idestado_pago: estadoPagoInfo.id,
+            metodoPagoNombre: metodoDisplay
+          }
+        })
+        .sort((a, b) => {
+          const fechaA = new Date(a.fecha_pago || 0)
+          const fechaB = new Date(b.fecha_pago || 0)
+          return fechaA - fechaB
+        })
+
+      const totalPagado = pagos.reduce((acc, pago) => acc + (Number(pago.monto) || 0), 0)
+      const precio = Number(paquete?.precio ?? 0)
+      const progress = calculatePaymentProgress(totalPagado, precio)
+
+      let estadoPagoInfo = getPaymentStateClasses(
+        reserva.estado_pago?.nombre_estado || reserva.estado_pago || reserva.idestado_pago,
+        paymentStates
+      )
+
+      if (pagos.length === 0 && totalPagado <= 0) {
+        estadoPagoInfo = getPaymentStateClasses(1, paymentStates)
+      } else if (progress.percentage >= 100 || precio <= 0) {
+        estadoPagoInfo = getPaymentStateClasses(3, paymentStates)
+      } else if (totalPagado > 0) {
+        estadoPagoInfo = getPaymentStateClasses(2, paymentStates)
+      }
+
+      const { data: resenasData, error: resenasError } = await supabase
+        .from('resena')
+        .select('id, calificacion, comentario, fecha_resena')
+        .eq('idactividad', reserva.id)
+        .eq('idusuario', user.id)
+
+      if (resenasError) {
+        console.error('No se pudo verificar la reseña del usuario', resenasError)
+      }
+
+      return {
+        ...reserva,
+        agenda,
+        paquete,
+        estado_actividad: estadoActividad,
+        pago: pagos,
+        resenas: Array.isArray(resenasData) ? resenasData : [],
+        totalPagado,
+        saldoPendiente: progress.remaining,
+        porcentajePagado: progress.percentage,
+        estadoPagoInfo,
+        estado_pago: estadoPagoInfo.label
+      }
+    }))
+
+    setReservas(reservasConResena)
     setLoading(false)
-  }
+  }, [paymentStates, supabase, user])
 
   useEffect(() => {
     fetchReservas()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id])
+  }, [fetchReservas])
 
   useEffect(() => {
     fetchEstadosActividad()
+  }, [])
+
+  useEffect(() => {
+    fetchEstadosPago()
   }, [])
 
   const reservasConAgenda = useMemo(() => reservas.map((reserva) => ({
@@ -352,8 +463,13 @@ export default function MiCuenta () {
             const tieneResena = resenas.length > 0
             const estadoActualNombre = normalizeEstadoNombre(reserva?.estado_actividad?.nombre_estado)
             const puedeResenar = !tieneResena && allowedReviewEstados.has(estadoActualNombre)
-            const pagosValidos = ensureArray(reserva.pago).filter((pago) => allowedPaymentMethods[normalizeEstadoNombre(pago?.metodo_pago)])
-            const pagoSeleccionado = pagosValidos[0] ?? null
+            const pagosRegistrados = ensureArray(reserva.pago)
+            const pagoSeleccionado = pagosRegistrados[0] ?? null
+            const progresoPago = Math.max(0, Math.min(100, reserva.porcentajePagado ?? 0))
+            const totalPagadoDisplay = formatCurrencyGTQ(reserva.totalPagado)
+            const saldoPendienteDisplay = formatCurrencyGTQ(reserva.saldoPendiente)
+            const precioPaqueteDisplay = formatCurrencyGTQ(paquete?.precio)
+            const estadoPagoInfo = reserva.estadoPagoInfo || getPaymentStateClasses(reserva.estado_pago, paymentStates)
 
             const estadoActualId = reserva.idestado_actividad ?? reserva?.estado_actividad?.id
             const ordenActual = estadoOrdenPorId.get(estadoActualId) ?? reserva?.estado_actividad?.orden ?? estadosOrdenados.find((estado) => normalizeEstadoNombre(estado.nombre_estado) === estadoActualNombre)?.orden ?? 0
@@ -507,7 +623,7 @@ export default function MiCuenta () {
                     </div>
                     <div className="space-y-1">
                       <dt className="text-xs uppercase tracking-[.2em] text-[#3b302a]/70">💰 Precio</dt>
-                      <dd className="font-medium">{formatCurrencyGTQ(paquete?.precio)}</dd>
+                      <dd className="font-medium">{precioPaqueteDisplay}</dd>
                     </div>
                     <div className="space-y-1">
                       <dt className="text-xs uppercase tracking-[.2em] text-[#3b302a]/70">📍 Ubicación</dt>
@@ -515,13 +631,75 @@ export default function MiCuenta () {
                     </div>
                     <div className="space-y-1">
                       <dt className="text-xs uppercase tracking-[.2em] text-[#3b302a]/70">💳 Método de pago</dt>
-                      <dd className="font-medium">{pagoSeleccionado ? allowedPaymentMethods[normalizeEstadoNombre(pagoSeleccionado.metodo_pago)] : 'Por registrar'}</dd>
+                      <dd className="font-medium">{pagoSeleccionado ? pagoSeleccionado.metodoPagoNombre : 'Pendiente de registrar'}</dd>
                     </div>
                     <div className="space-y-1">
                       <dt className="text-xs uppercase tracking-[.2em] text-[#3b302a]/70">🏷️ Estado de pago</dt>
-                      <dd className="font-medium capitalize">{reserva.estado_pago || 'Pendiente'}</dd>
+                      <dd>
+                        <span
+                          className={`inline-flex items-center rounded-full px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.25em] ${estadoPagoInfo?.badgeClass || 'bg-amber-100 text-amber-700'}`}
+                        >
+                          {reserva.estado_pago || 'Pendiente'}
+                        </span>
+                      </dd>
                     </div>
                   </dl>
+                </section>
+
+                <section className="rounded-3xl border border-[#c9b38a]/50 bg-white/80 p-5 shadow-sm">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <h3 className="text-lg font-semibold text-[#3b302a]">Estado de tu pago</h3>
+                    <span className="text-xs uppercase tracking-[.3em] text-[#3b302a]/60">{Math.round(progresoPago)} % pagado</span>
+                  </div>
+                  <div className="mt-3 h-2 rounded-full bg-[#f6f2ea]">
+                    <div
+                      className="h-full rounded-full bg-[#3b302a] transition-all"
+                      style={{ width: `${progresoPago}%` }}
+                    />
+                  </div>
+                  <dl className="mt-4 grid gap-3 text-sm text-[#3b302a] sm:grid-cols-3">
+                    <div>
+                      <dt className="text-xs uppercase tracking-[.2em] text-[#3b302a]/70">Total del paquete</dt>
+                      <dd className="font-medium">{precioPaqueteDisplay}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-[.2em] text-[#3b302a]/70">Pagado</dt>
+                      <dd className="font-medium">{totalPagadoDisplay}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-[.2em] text-[#3b302a]/70">Saldo pendiente</dt>
+                      <dd className="font-medium">{saldoPendienteDisplay}</dd>
+                    </div>
+                  </dl>
+                  <div className="mt-4 space-y-3">
+                    <h4 className="text-sm font-semibold text-[#3b302a]">Historial de pagos</h4>
+                    {pagosRegistrados.length ? (
+                      <ul className="space-y-3">
+                        {pagosRegistrados.map((pago) => (
+                          <li
+                            key={pago.id || `${pago.tipo_pago}-${pago.fecha_pago}`}
+                            className="rounded-2xl border border-[#c9b38a]/40 bg-[#faf8f4] p-3 text-sm text-[#3b302a]"
+                          >
+                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                              <span className="font-semibold text-[#3b302a]">{pago.tipo_pago}</span>
+                              <span className="font-semibold text-[#3b302a]">{formatCurrencyGTQ(pago.monto)}</span>
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-2 text-xs text-[#3b302a]/70">
+                              <span>{pago.metodoPagoNombre}</span>
+                              <span>{formatDateTime(pago.fecha_pago)}</span>
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-2 text-[0.65rem] font-semibold uppercase tracking-[0.25em]">
+                              <span className={`inline-flex rounded-full px-2 py-1 ${pago.estadoPagoInfo?.badgeClass || 'bg-amber-100 text-amber-700'}`}>
+                                {pago.estado_pago}
+                              </span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-slate-600">Aún no registramos pagos para esta reserva.</p>
+                    )}
+                  </div>
                 </section>
 
                 <section className="space-y-3">

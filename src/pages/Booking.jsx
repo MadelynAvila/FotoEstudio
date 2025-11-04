@@ -834,7 +834,7 @@ export default function Booking() {
             idusuario: user.id,
             idagenda: agendaId,
             idpaquete: paqueteIdNumerico,
-            estado_pago: 'Pendiente',
+            idestado_pago: 1,
             nombre_actividad: nombreActividad,
             ubicacion
           }
@@ -851,16 +851,6 @@ export default function Booking() {
         setError('No fue posible crear la actividad de la reserva.')
         return
       }
-
-      const montoReserva = paqueteSel?.precio ?? 0
-      await supabase.from('pago').insert([
-        {
-          idactividad: actividadGenerada.id,
-          metodo_pago: formaPago,
-          monto: montoReserva,
-          detalle_pago: 'Pago pendiente registrado desde el panel web'
-        }
-      ])
 
       const { mapa: mapaActualizado, error: calendarioActualizadoError } = await fetchCalendarAvailability()
       if (calendarioActualizadoError) {
