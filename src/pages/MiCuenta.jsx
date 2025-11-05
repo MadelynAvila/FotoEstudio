@@ -800,6 +800,7 @@ export default function MiCuenta () {
                         </section>
                       </div>
                     )}
+                  </div>
                 </article>
             )
           })}
