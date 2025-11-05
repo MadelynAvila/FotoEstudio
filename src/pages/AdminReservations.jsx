@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import DEFAULT_PAYMENT_STATES, { getPaymentStateClasses } from '../lib/paymentStates'
 import AdminHelpCard from '../components/AdminHelpCard'
@@ -21,6 +22,16 @@ const defaultFilters = {
   fotografo: 'all',
   fecha: null
 }
+
+const MASIVE_ESTADOS = [
+  'Pendiente',
+  'Reservada',
+  'En progreso',
+  'En edición',
+  'Impresión',
+  'Lista',
+  'Entregada'
+]
 
 function normalize(value) {
   if (!value) return ''
@@ -75,10 +86,17 @@ function isSameDay(dateValue, targetDate) {
 }
 
 export default function AdminReservations() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [reservas, setReservas] = useState([])
   const [estados, setEstados] = useState([])
   const [filters, setFilters] = useState(defaultFilters)
   const [selection, setSelection] = useState({})
+  const [selectedReservas, setSelectedReservas] = useState([])
+  const [visibleReservas, setVisibleReservas] = useState([])
+  const [bulkActionOpen, setBulkActionOpen] = useState(false)
+  const [bulkEstadoNombre, setBulkEstadoNombre] = useState('')
+  const [bulkLoading, setBulkLoading] = useState(false)
+  const [toast, setToast] = useState(null)
   const [feedback, setFeedback] = useState({ type: '', message: '' })
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState(null)
@@ -116,6 +134,7 @@ export default function AdminReservations() {
       setReservas([])
       setEstados([])
       setSelection({})
+      setSelectedReservas([])
       setFeedback({ type: 'error', message: 'No se pudieron cargar las reservas. Intenta nuevamente.' })
       setLoading(false)
       return
@@ -167,20 +186,20 @@ export default function AdminReservations() {
       )
 
       return {
-        id: item.id,
-        clienteId: cliente?.id ?? null,
+        id: Number(item.id),
+        clienteId: cliente?.id != null ? Number(cliente.id) : null,
         cliente: cliente?.username || 'Cliente sin nombre',
-        fotografoId: fotografo?.id ?? null,
+        fotografoId: fotografo?.id != null ? Number(fotografo.id) : null,
         fotografo: fotografo?.username || 'Sin asignar',
         paquete: paquete?.nombre_paquete || 'Paquete sin asignar',
         fecha: agenda?.fecha || null,
         horaInicio: agenda?.horainicio || null,
         horaFin: agenda?.horafin || null,
-        estadoId: item.idestado_actividad ?? null,
+        estadoId: item.idestado_actividad != null ? Number(item.idestado_actividad) : null,
         estadoNombre: estado?.nombre_estado || 'Pendiente',
         estadoPago: estadoPagoInfo.label,
         estadoPagoId: estadoPagoInfo.id,
-        agendaId: item.idagenda || null
+        agendaId: item.idagenda != null ? Number(item.idagenda) : null
       }
     })
 
@@ -191,12 +210,164 @@ export default function AdminReservations() {
         formattedReservas.map(reserva => [reserva.id, reserva.estadoId ? String(reserva.estadoId) : ''])
       )
     )
+    setSelectedReservas([])
     setLoading(false)
   }
 
   useEffect(() => {
     loadReservas()
   }, [])
+
+  useEffect(() => {
+    setSelectedReservas(prev => prev.filter(id => reservas.some(reserva => reserva.id === id)))
+  }, [reservas])
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 4000)
+    return () => clearTimeout(timer)
+  }, [toast])
+
+  useEffect(() => {
+    const agendaDia = searchParams.get('agendaDia')
+    if (agendaDia) {
+      const parsed = toDate(agendaDia)
+      if (parsed) {
+        setFilters(prev => ({ ...prev, fecha: parsed }))
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem('admin-agenda-selected-day', agendaDia)
+        }
+      }
+      const nextParams = new URLSearchParams(searchParams)
+      nextParams.delete('agendaDia')
+      setSearchParams(nextParams, { replace: true })
+      return
+    }
+
+    if (!filters.fecha && typeof window !== 'undefined') {
+      const stored = window.localStorage.getItem('admin-agenda-selected-day')
+      if (stored) {
+        const parsedStored = toDate(stored)
+        if (parsedStored) {
+          setFilters(prev => ({ ...prev, fecha: parsedStored }))
+        }
+      }
+    }
+  }, [filters.fecha, searchParams, setSearchParams])
+
+  const handleVisibleRowsChange = rows => {
+    setVisibleReservas(Array.isArray(rows) ? rows : [])
+  }
+
+  const visibleReservaIds = useMemo(
+    () => visibleReservas.map(reserva => Number(reserva.id)).filter(id => !Number.isNaN(id)),
+    [visibleReservas]
+  )
+
+  const allVisibleSelected = useMemo(() => {
+    if (!visibleReservaIds.length) return false
+    return visibleReservaIds.every(id => selectedReservas.includes(id))
+  }, [visibleReservaIds, selectedReservas])
+
+  const toggleSelectAllVisible = useCallback(() => {
+    if (!visibleReservaIds.length) return
+    setSelectedReservas(prev => {
+      if (visibleReservaIds.every(id => prev.includes(id))) {
+        return prev.filter(id => !visibleReservaIds.includes(id))
+      }
+      const merged = new Set(prev)
+      visibleReservaIds.forEach(id => merged.add(id))
+      return Array.from(merged)
+    })
+  }, [visibleReservaIds])
+
+  const toggleReservaSelection = useCallback(reservaId => {
+    const id = Number(reservaId)
+    setSelectedReservas(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(item => item !== id)
+      }
+      return [...prev, id]
+    })
+  }, [])
+
+  const handleBulkApply = async () => {
+    if (!bulkEstadoNombre || !selectedReservas.length) return
+
+    const matchedEstado = estados.find(
+      estado => normalize(estado?.nombre_estado) === normalize(bulkEstadoNombre)
+    )
+    const nuevoEstadoId = matchedEstado?.id ? Number(matchedEstado.id) : null
+
+    setBulkLoading(true)
+
+    try {
+      const response = await fetch('/api/reservas/actualizar-multiples', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reservas: selectedReservas, nuevo_estado: bulkEstadoNombre })
+      })
+
+      if (!response.ok) {
+        throw new Error('Solicitud rechazada')
+      }
+
+      const cantidad = selectedReservas.length
+
+      if (nuevoEstadoId) {
+        const estadoActualizado = estados.find(item => Number(item.id) === nuevoEstadoId)
+        setSelection(prev => {
+          const next = { ...prev }
+          selectedReservas.forEach(reservaId => {
+            next[reservaId] = String(nuevoEstadoId)
+          })
+          return next
+        })
+
+        setReservas(prev =>
+          prev.map(item =>
+            selectedReservas.includes(item.id)
+              ? {
+                  ...item,
+                  estadoId: nuevoEstadoId,
+                  estadoNombre: estadoActualizado?.nombre_estado || bulkEstadoNombre,
+                  estadoPago:
+                    reservadaEstadoId && nuevoEstadoId === Number(reservadaEstadoId)
+                      ? anticipoInfo.label
+                      : item.estadoPago,
+                  estadoPagoId:
+                    reservadaEstadoId && nuevoEstadoId === Number(reservadaEstadoId)
+                      ? anticipoInfo.id ?? paymentStateIds.anticipo
+                      : item.estadoPagoId
+                }
+              : item
+          )
+        )
+      } else {
+        setReservas(prev =>
+          prev.map(item =>
+            selectedReservas.includes(item.id)
+              ? {
+                  ...item,
+                  estadoNombre: bulkEstadoNombre
+                }
+              : item
+          )
+        )
+      }
+
+      setToast({ type: 'success', message: `✅ Se actualizaron ${cantidad} reservas correctamente.` })
+      setSelectedReservas([])
+      setBulkActionOpen(false)
+      setBulkEstadoNombre('')
+      setFeedback({ type: '', message: '' })
+    } catch (error) {
+      console.error('Error actualizando reservas masivamente', error)
+      setToast({ type: 'error', message: 'No se pudieron actualizar las reservas seleccionadas.' })
+    } finally {
+      setBulkLoading(false)
+    }
+  }
 
   const filteredReservas = useMemo(() => {
     const searchTerm = normalize(filters.search)
@@ -229,15 +400,42 @@ export default function AdminReservations() {
   const reservasColumns = useMemo(
     () => [
       {
+        id: 'seleccionar',
+        label: 'Seleccionar',
+        header: <span className="sr-only">Seleccionar reserva</span>,
+        hideOnMobile: true,
+        align: 'center',
+        render: reserva => (
+          <input
+            type="checkbox"
+            className="reserva-checkbox"
+            checked={selectedReservas.includes(reserva.id)}
+            onChange={() => toggleReservaSelection(reserva.id)}
+          />
+        )
+      },
+      {
         id: 'reserva',
         label: 'Reserva',
-        render: (reserva) => (
-          <div className="space-y-1">
-            <span className="text-sm font-semibold text-umber">#{reserva.id}</span>
-            <p className="text-sm text-slate-600">{reserva.cliente}</p>
-            <p className="text-xs text-slate-500">{reserva.paquete}</p>
-          </div>
-        )
+        render: (reserva) => {
+          const isChecked = selectedReservas.includes(reserva.id)
+          return (
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                className="reserva-checkbox mt-1 md:hidden"
+                checked={isChecked}
+                onChange={() => toggleReservaSelection(reserva.id)}
+                aria-label={`Seleccionar reserva #${reserva.id}`}
+              />
+              <div className="space-y-1">
+                <span className="text-sm font-semibold text-umber">#{reserva.id}</span>
+                <p className="text-sm text-slate-600">{reserva.cliente}</p>
+                <p className="text-xs text-slate-500">{reserva.paquete}</p>
+              </div>
+            </div>
+          )
+        }
       },
       {
         id: 'programacion',
@@ -311,7 +509,7 @@ export default function AdminReservations() {
         }
       }
     ],
-    [estados, selection, updatingId]
+    [estados, selection, selectedReservas, toggleReservaSelection, updatingId]
   )
 
   const onFilterChange = (field, value) => {
@@ -375,6 +573,15 @@ export default function AdminReservations() {
 
   return (
     <div className="admin-page space-y-6">
+      {toast && (
+        <div className={`admin-toast admin-toast--${toast.type}`} role="status">
+          <span>{toast.message}</span>
+          <button type="button" onClick={() => setToast(null)} aria-label="Cerrar notificación">
+            ×
+          </button>
+        </div>
+      )}
+
       <div className="admin-section space-y-4">
         <header className="admin-header">
           <div>
@@ -466,12 +673,45 @@ export default function AdminReservations() {
         {loading ? (
           <p className="muted text-sm">Cargando reservas…</p>
         ) : filteredReservas.length ? (
-          <AdminDataTable
-            columns={reservasColumns}
-            rows={filteredReservas}
-            rowKey={reserva => reserva.id}
-            caption={`Total de reservas: ${filteredReservas.length}`}
-          />
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-[#E4DDCC] bg-[#FAF8F4] px-4 py-3">
+              <label className="flex items-center gap-2 text-sm font-semibold text-umber">
+                <input
+                  type="checkbox"
+                  className="reserva-checkbox"
+                  onChange={toggleSelectAllVisible}
+                  checked={allVisibleSelected}
+                  disabled={!visibleReservaIds.length}
+                />
+                Seleccionar todo
+              </label>
+              <span className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                {selectedReservas.length} seleccionadas
+              </span>
+            </div>
+
+            <AdminDataTable
+              columns={reservasColumns}
+              rows={filteredReservas}
+              rowKey={reserva => reserva.id}
+              caption={`Total de reservas: ${filteredReservas.length}`}
+              onVisibleRowsChange={handleVisibleRowsChange}
+            />
+
+            <div className="bulk-action-bar">
+              <button
+                type="button"
+                className="bulk-action-button"
+                onClick={() => {
+                  setBulkEstadoNombre('')
+                  setBulkActionOpen(true)
+                }}
+                disabled={!selectedReservas.length || bulkLoading}
+              >
+                Actualizar estado seleccionado
+              </button>
+            </div>
+          </>
         ) : (
           <p className="muted text-sm">No hay reservas que coincidan con los filtros seleccionados.</p>
         )}
@@ -484,6 +724,67 @@ export default function AdminReservations() {
           <p>Una vez marcada como entregada, la reserva queda bloqueada para mantener el historial.</p>
         </AdminHelpCard>
       </div>
+
+      {bulkActionOpen && (
+        <div
+          className="admin-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="bulk-action-title"
+          onClick={event => {
+            if (event.target === event.currentTarget) {
+              setBulkActionOpen(false)
+              setBulkEstadoNombre('')
+            }
+          }}
+        >
+          <div className="admin-modal__content">
+            <h3 id="bulk-action-title" className="text-lg font-semibold text-umber">
+              Actualizar estado masivo
+            </h3>
+            <p className="muted text-sm">
+              Selecciona el nuevo estado para {selectedReservas.length} reservas elegidas.
+            </p>
+            <label className="grid gap-2 text-sm">
+              <span className="font-semibold text-slate-700">Nuevo estado</span>
+              <select
+                className="border rounded-xl2 px-3 py-2"
+                value={bulkEstadoNombre}
+                onChange={event => setBulkEstadoNombre(event.target.value)}
+              >
+                <option value="">Selecciona un estado</option>
+                {MASIVE_ESTADOS.map(estado => (
+                  <option key={estado} value={estado}>
+                    {estado}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setBulkActionOpen(false)
+                  setBulkEstadoNombre('')
+                }}
+                disabled={bulkLoading}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="bulk-action-apply"
+                onClick={handleBulkApply}
+                disabled={!bulkEstadoNombre || bulkLoading}
+              >
+                {bulkLoading ? 'Aplicando…' : 'Aplicar cambios'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

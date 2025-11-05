@@ -142,6 +142,26 @@
     @apply card p-6 space-y-4;
   }
 
+  .reserva-checkbox {
+    width: 1.15rem;
+    height: 1.15rem;
+    border: 2px solid #8e6037;
+    border-radius: 0.45rem;
+    background: #fff;
+    accent-color: #8e6037;
+    box-shadow: inset 0 0 0 1px rgba(142, 96, 55, 0.15);
+  }
+
+  .reserva-checkbox:checked {
+    background: #8e6037;
+    color: #fff;
+  }
+
+  .reserva-checkbox:focus-visible {
+    outline: 2px solid #e4ddcc;
+    outline-offset: 2px;
+  }
+
   .admin-columns {
     display: grid;
     gap: 1rem;
@@ -775,6 +795,63 @@
     @apply opacity-50 cursor-not-allowed;
   }
 
+  .bulk-action-bar {
+    position: sticky;
+    bottom: 10px;
+    margin-top: 1.5rem;
+    display: flex;
+    justify-content: flex-end;
+    padding: 0.75rem 1rem;
+    background: rgba(250, 248, 244, 0.95);
+    border-radius: 1.75rem;
+    border: 1px solid #e4ddcc;
+    box-shadow: 0 18px 38px rgba(59, 48, 42, 0.14);
+    backdrop-filter: blur(6px);
+    z-index: 10;
+  }
+
+  @media (min-width: 768px) {
+    .bulk-action-bar {
+      position: static;
+      padding: 0;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      backdrop-filter: none;
+    }
+  }
+
+  .bulk-action-button,
+  .bulk-action-apply {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 9999px;
+    padding: 0.75rem 1.75rem;
+    font-weight: 600;
+    color: #fff;
+    background: #8e6037;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+  }
+
+  .bulk-action-button:hover,
+  .bulk-action-button:focus-visible,
+  .bulk-action-apply:hover,
+  .bulk-action-apply:focus-visible {
+    background: #734c2b;
+    outline: none;
+    transform: translateY(-1px);
+  }
+
+  .bulk-action-button:disabled,
+  .bulk-action-apply:disabled {
+    background: #c7b39f;
+    cursor: not-allowed;
+    transform: none;
+    color: rgba(255, 255, 255, 0.9);
+  }
+
   @media (max-width: 768px) {
     .admin-data-table__table thead {
       @apply hidden;
@@ -794,9 +871,249 @@
     }
   }
 
+  .admin-modal {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(59, 48, 42, 0.48);
+    padding: 1.5rem;
+    z-index: 50;
+    backdrop-filter: blur(2px);
+  }
+
+  .admin-modal__content {
+    width: min(100%, 420px);
+    border-radius: 1.75rem;
+    border: 1px solid #e4ddcc;
+    background: #faf8f4;
+    padding: 1.75rem;
+    box-shadow: 0 24px 50px rgba(59, 48, 42, 0.2);
+    display: grid;
+    gap: 1rem;
+  }
+
   .booking-datepicker,
   .booking-datepicker-popper .react-datepicker {
     @apply border border-[color:var(--border)] rounded-3xl bg-white shadow-xl shadow-slate-200/70 p-4;
+  }
+
+  .agenda-layout {
+    display: grid;
+    gap: 1.5rem;
+  }
+
+  @media (min-width: 1024px) {
+    .agenda-layout {
+      grid-template-columns: 280px 1fr;
+      align-items: start;
+    }
+  }
+
+  .agenda-sidebar {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .agenda-sidebar__title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: #8e6037;
+  }
+
+  .agenda-sidebar__list {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .agenda-sidebar__button {
+    width: 100%;
+    text-align: left;
+    padding: 0.75rem 1rem;
+    border-radius: 1.5rem;
+    border: 1px solid transparent;
+    background: #f5f1eb;
+    display: grid;
+    gap: 0.25rem;
+    transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+  }
+
+  .agenda-sidebar__button:hover,
+  .agenda-sidebar__button:focus-visible {
+    border-color: #8e6037;
+    background: #faf8f4;
+    transform: translateY(-2px);
+    outline: none;
+  }
+
+  .agenda-sidebar__button.is-active {
+    border-color: #8e6037;
+    background: #8e6037;
+    color: #fff;
+    box-shadow: 0 12px 26px rgba(142, 96, 55, 0.28);
+  }
+
+  .agenda-sidebar__name {
+    font-weight: 600;
+  }
+
+  .agenda-sidebar__email {
+    font-size: 0.75rem;
+    color: rgba(59, 48, 42, 0.7);
+  }
+
+  .agenda-sidebar__button.is-active .agenda-sidebar__email {
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  .agenda-main {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .agenda-main__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-radius: 1.75rem;
+    border: 1px solid #e4ddcc;
+    background: #faf8f4;
+    padding: 0.75rem 1.5rem;
+    font-weight: 600;
+    color: #3b302a;
+  }
+
+  .agenda-main__title {
+    text-transform: capitalize;
+  }
+
+  .agenda-nav {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 9999px;
+    border: 1px solid #e4ddcc;
+    background: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    color: #8e6037;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+  }
+
+  .agenda-nav:hover,
+  .agenda-nav:focus-visible {
+    background: #f0e7db;
+    transform: translateY(-1px);
+    outline: none;
+  }
+
+  .agenda-calendar-wrapper {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .agenda-calendar {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .agenda-day {
+    min-height: 3.25rem;
+    border-radius: 1.25rem;
+    border: 1px solid #e4ddcc;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    color: #3b302a;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  }
+
+  .agenda-day__number {
+    font-size: 0.95rem;
+  }
+
+  .agenda-day--label {
+    background: transparent;
+    border: none;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(59, 48, 42, 0.65);
+    pointer-events: none;
+  }
+
+  .agenda-day--available {
+    background: #8e6037;
+    color: #fff;
+    box-shadow: 0 12px 24px rgba(142, 96, 55, 0.25);
+  }
+
+  .agenda-day--busy {
+    background: #e4ddcc;
+    color: #5b4636;
+  }
+
+  .agenda-day--muted {
+    opacity: 0.6;
+  }
+
+  .agenda-day--pending {
+    box-shadow: 0 0 0 2px rgba(59, 48, 42, 0.25);
+  }
+
+  .agenda-day--drag {
+    transform: translateY(-2px);
+  }
+
+  .agenda-day--selected {
+    box-shadow: 0 0 0 3px rgba(142, 96, 55, 0.45);
+  }
+
+  .agenda-day:not(.agenda-day--label):hover,
+  .agenda-day:not(.agenda-day--label):focus-visible {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 32px rgba(59, 48, 42, 0.18);
+    outline: none;
+  }
+
+  .agenda-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    justify-content: space-between;
+    align-items: center;
+    border-radius: 1.5rem;
+    border: 1px dashed #e4ddcc;
+    background: #fff;
+    padding: 1rem 1.5rem;
+  }
+
+  .agenda-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: #5b4636;
+  }
+
+  .agenda-summary__label {
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    font-weight: 700;
+  }
+
+  .agenda-summary__value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #8e6037;
   }
 
   .booking-datepicker .react-datepicker__header,

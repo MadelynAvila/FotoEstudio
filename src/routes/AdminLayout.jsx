@@ -5,6 +5,7 @@ import { useAuth } from '../auth/authContext'
 const NAV_ITEMS = [
   { to: '/admin', label: 'Inicio', end: true },
   { to: '/admin/reservas', label: 'Reservas' },
+  { to: '/admin/agenda', label: 'Agenda' },
   { to: '/admin/clientes', label: 'Clientes' },
   { to: '/admin/fotografos', label: 'Fotógrafos' },
   { to: '/admin/servicios', label: 'Servicios' },
