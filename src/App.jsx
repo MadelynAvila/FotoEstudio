@@ -15,6 +15,7 @@ import Reviews from './pages/Reviews'
 import MiCuenta from './pages/MiCuenta'
 import AdminDashboard from './pages/AdminDashboard'
 import AdminReservations from './pages/AdminReservations'
+import AdminAgenda from './pages/AdminAgenda'
 import AdminGallery from './pages/AdminGallery'
 import AdminPackages from './pages/AdminPackages'
 import AdminClients from './pages/AdminClients'
@@ -46,6 +47,7 @@ export default function App(){
         <Route element={<ProtectedRoute roles={["admin", "administrador", "fotografo", "fotógrafo", "photographer"]} />}>
           <Route element={<AdminLayout />}>
             <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin/agenda" element={<AdminAgenda />} />
             <Route path="/admin/reservas" element={<AdminReservations />} />
             <Route path="/admin/clientes" element={<AdminClients />} />
             <Route path="/admin/fotografos" element={<AdminPhotographers />} />

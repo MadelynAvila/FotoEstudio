@@ -15,7 +15,8 @@ export default function AdminDataTable({
   emptyState = 'No hay registros para mostrar.',
   pageSizeOptions = DEFAULT_PAGE_SIZES,
   defaultPageSize,
-  caption
+  caption,
+  onVisibleRowsChange
 }) {
   const safePageSizeOptions = pageSizeOptions && pageSizeOptions.length ? pageSizeOptions : DEFAULT_PAGE_SIZES
   const initialPageSize = defaultPageSize && safePageSizeOptions.includes(defaultPageSize)
@@ -49,6 +50,12 @@ export default function AdminDataTable({
     const startIndex = (page - 1) * pageSize
     return rows.slice(startIndex, startIndex + pageSize)
   }, [rows, page, pageSize])
+
+  useEffect(() => {
+    if (typeof onVisibleRowsChange === 'function') {
+      onVisibleRowsChange(paginatedRows)
+    }
+  }, [paginatedRows, onVisibleRowsChange])
 
   const summaryText = useMemo(() => {
     if (!rows || !rows.length) return 'Sin registros'
