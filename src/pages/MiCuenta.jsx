@@ -508,53 +508,92 @@ export default function MiCuenta () {
 
             const isActive = activeReservaId === reserva.id
 
-            const statusStyles = {
-              current: {
-                container: 'bg-[#E4DDCC] border-2 border-[#8E6037] text-[#3B302A] shadow-[0_18px_36px_rgba(59,48,42,0.16)]',
-                titleClass: 'text-[#3B302A]',
-                descriptionClass: 'text-[#3B302A]/70'
-              },
-              completed: {
-                container: 'bg-[#8E6037] border border-[#8E6037] text-[#FAF8F4] shadow-[0_16px_32px_rgba(59,48,42,0.24)]',
-                titleClass: 'text-[#FAF8F4]',
-                descriptionClass: 'text-[#FAF8F4]/80'
-              },
-              upcoming: {
-                container: 'bg-[#8E6037]/80 border border-[#8E6037] text-[#FAF8F4] shadow-[0_14px_26px_rgba(59,48,42,0.18)]',
-                titleClass: 'text-[#FAF8F4]',
-                descriptionClass: 'text-[#FAF8F4]/80'
-              }
-            }
 
-            return (
-              <article
-                key={reserva.id}
-                className={`group relative rounded-[1.25rem] border transition-all duration-300 ease-out ${
-                  isActive
-                    ? 'border-2 border-[#8E6037] bg-white shadow-[0_24px_48px_rgba(59,48,42,0.18)]'
-                    : 'border border-[#e4ddcc] bg-[#faf8f4] shadow-[0_16px_32px_rgba(59,48,42,0.12)] hover:border-[#8E6037]/70 hover:shadow-[0_22px_40px_rgba(59,48,42,0.16)]'
-                }`}
-              >
-                <div className="flex flex-col gap-6 p-6 md:p-8">
-                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <div className="space-y-2">
-                      <h2 className="text-2xl font-semibold text-[#3b302a]">{paquete?.nombre_paquete || 'Paquete por definir'}</h2>
-                      <p className="text-sm text-[#3b302a]/70">{reserva.nombre_actividad || 'Actividad sin título'}</p>
-                    </div>
-                    <div className="flex flex-col items-start gap-3 text-sm md:items-end">
-                      <span className="inline-flex items-center gap-2 rounded-full bg-[#E4DDCC] px-4 py-2 font-semibold text-[#3b302a] shadow-inner">
-                        <span className="text-xs uppercase tracking-[0.3em] text-[#8E6037]/80">Estado</span>
-                        <span className="text-base font-semibold">{reserva?.estado_actividad?.nombre_estado || 'Pendiente'}</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleReserva(reserva.id)}
-                        className={`inline-flex items-center gap-2 rounded-full border-2 border-transparent px-5 py-2 text-sm font-semibold transition-all duration-300 ease-out ${
-                          isActive
-                            ? 'bg-[#8E6037] text-[#FAF8F4] shadow-lg shadow-[#8E6037]/30 hover:bg-[#704c2c]'
-                            : 'bg-[#8E6037] text-[#FAF8F4] hover:bg-[#704c2c]'
-                        }`}
-                      >
+
+
+
+
+            const statusStyles = { 
+  current: {
+    // 🔸 Estado "actual" → tono beige claro con borde marrón dorado
+    container: 'bg-[#E4DDCC] border-2 border-[#8E6037] text-[#3B302A] shadow-[0_18px_36px_rgba(59,48,42,0.16)]',
+    // Texto principal en marrón oscuro (legible sobre fondo claro)
+    titleClass: 'text-[#3B302A]',
+    // Texto secundario con transparencia del mismo marrón oscuro
+    descriptionClass: 'text-[#3B302A]/70'
+  },
+  completed: {
+    // 🔸 Estado "completado" → fondo marrón dorado con texto claro
+    container: 'bg-[#8E6037] border border-[#8E6037] text-[#FAF8F4] shadow-[0_16px_32px_rgba(59,48,42,0.24)]',
+    // Texto principal en beige muy claro (para contraste sobre el fondo oscuro)
+    titleClass: 'text-[#FAF8F4]',
+    // Texto secundario con opacidad para suavizar el contraste
+    descriptionClass: 'text-[#FAF8F4]/80'
+  },
+  upcoming: {
+    // 🔸 Estado "próximo" → mismo tono dorado con leve transparencia
+    container: 'bg-[#8E6037]/80 border border-[#8E6037] text-[#FAF8F4] shadow-[0_14px_26px_rgba(59,48,42,0.18)]',
+    // Texto principal y secundario claros sobre fondo medio oscuro
+    titleClass: 'text-[#FAF8F4]',
+    descriptionClass: 'text-[#FAF8F4]/80'
+  }
+}
+
+return (
+  <article
+    key={reserva.id}
+    className={`group relative rounded-[1.25rem] border transition-all duration-300 ease-out ${
+      isActive
+        // 🔸 Tarjeta activa → borde marrón medio, fondo blanco, sombra sutil
+        ? 'border-2 border-[#7a4b20] bg-white shadow-[0_24px_48px_rgba(59,48,42,0.18)]'
+        // 🔸 Tarjeta inactiva → fondo beige claro, borde suave y hover dorado
+        : 'border border-[#e4ddcc] bg-[#faf8f4] shadow-[0_16px_32px_rgba(59,48,42,0.12)] hover:border-[#8E6037]/70 hover:shadow-[0_22px_40px_rgba(59,48,42,0.16)]'
+    }`}
+  >
+    <div className="flex flex-col gap-6 p-6 md:p-8">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-2">
+          {/* 🔸 Título del paquete (marrón oscuro para máxima legibilidad) */}
+          <h2 className="text-2xl font-semibold text-[#3b302a]">
+            {paquete?.nombre_paquete || 'Paquete por definir'}
+          </h2>
+          {/* 🔸 Descripción o actividad (marrón oscuro con opacidad) */}
+          <p className="text-sm text-[#3b302a]/70">
+            {reserva.nombre_actividad || 'Actividad sin título'}
+          </p>
+        </div>
+
+        <div className="flex flex-col items-start gap-3 text-sm md:items-end">
+          {/* 🔸 Chip de estado → fondo beige suave, texto marrón */}
+          <span className="inline-flex items-center gap-2 rounded-full bg-[#E4DDCC] px-4 py-2 font-semibold text-[#3b302a] shadow-inner">
+            <span className="text-xs uppercase tracking-[0.3em] text-[#8E6037]/80">
+              Estado
+            </span>
+            <span className="text-base font-semibold">
+              {reserva?.estado_actividad?.nombre_estado || 'Pendiente'}
+            </span>
+          </span>
+
+          {/* 🔸 Botón de acción: beige oscuro a marrón intenso */}
+          <button
+            type="button"
+            onClick={() => handleToggleReserva(reserva.id)}
+            className={`inline-flex items-center gap-2 rounded-full border-2 border-transparent px-5 py-2 text-sm font-semibold transition-all duration-300 ease-out ${
+              isActive
+                // 🔹 Activo → beige medio con hover marrón oscuro
+                ? 'bg-[#8E6037] text-[#FAF8F4] shadow-lg shadow-[#8E6037]/30 hover:bg-[#704c2c]'
+                // 🔹 Inactivo → marrón oscuro con hover más profundo
+                : 'bg-[#6d3d13] text-[#FAF8F4] hover:bg-[#45280e]'
+            }`}
+          >
+
+
+
+
+
+
+
+            
                         {isActive ? 'Ocultar progreso' : 'Ver progreso'}
                       </button>
                     </div>
