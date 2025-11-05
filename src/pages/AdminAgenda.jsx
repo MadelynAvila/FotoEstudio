@@ -5,6 +5,12 @@ import AdminHelpCard from '../components/AdminHelpCard'
 
 const DAY_LABELS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 
+function normalizeTime(value, fallback = '08:00') {
+  if (!value) return fallback
+  const [hours = '00', minutes = '00'] = String(value).split(':')
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
 function formatDateKey(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return null
@@ -104,7 +110,7 @@ export default function AdminAgenda() {
 
     const { data: agendaData = [], error: agendaError } = await supabase
       .from('agenda')
-      .select('id, idfotografo, fecha, disponible')
+      .select('id, idfotografo, fecha, horainicio, horafin, disponible')
 
     if (agendaError) {
       console.error('Error cargando agenda', agendaError)
@@ -142,7 +148,9 @@ export default function AdminAgenda() {
       if (!acc[entry.idfotografo]) acc[entry.idfotografo] = {}
       acc[entry.idfotografo][key] = {
         id: entry.id,
-        disponible: entry.disponible !== false
+        disponible: entry.disponible !== false,
+        horainicio: normalizeTime(entry.horainicio, '08:00'),
+        horafin: normalizeTime(entry.horafin, '17:00')
       }
       return acc
     }, {})
@@ -176,23 +184,43 @@ export default function AdminAgenda() {
     (fotografoId, keys, value) => {
       if (!fotografoId || !Array.isArray(keys) || !keys.length) return
 
+      const currentPhotographerAvailability = availability[fotografoId] || {}
+      const initialPhotographerAvailability = initialAvailability[fotografoId] || {}
+
+      const updates = keys.map(key => {
+        const baseActual = currentPhotographerAvailability[key]
+        const baseInicial = initialPhotographerAvailability[key] || {}
+        return {
+          key,
+          next: {
+            id: baseActual?.id ?? baseInicial?.id ?? null,
+            disponible: value,
+            horainicio: normalizeTime(baseActual?.horainicio || baseInicial?.horainicio, '08:00'),
+            horafin: normalizeTime(baseActual?.horafin || baseInicial?.horafin, '17:00')
+          }
+        }
+      })
+
       setAvailability(prev => {
         const current = { ...(prev[fotografoId] || {}) }
-        keys.forEach(key => {
-          const original = current[key] || { id: null, disponible: false }
-          current[key] = { ...original, disponible: value }
+        updates.forEach(({ key, next }) => {
+          current[key] = next
         })
         return { ...prev, [fotografoId]: current }
       })
 
       setPendingChanges(prev => {
         const current = { ...(prev[fotografoId] || {}) }
-        keys.forEach(key => {
-          const baseValue = initialAvailability[fotografoId]?.[key]?.disponible ?? false
-          if (baseValue === value) {
+        updates.forEach(({ key, next }) => {
+          const baseEntry = initialPhotographerAvailability[key]
+          if (baseEntry && baseEntry.disponible === next.disponible) {
             delete current[key]
           } else {
-            current[key] = { disponible: value }
+            current[key] = {
+              disponible: next.disponible,
+              horainicio: next.horainicio,
+              horafin: next.horafin
+            }
           }
         })
         if (!Object.keys(current).length) {
@@ -202,7 +230,7 @@ export default function AdminAgenda() {
         return { ...prev, [fotografoId]: current }
       })
     },
-    [initialAvailability]
+    [availability, initialAvailability]
   )
 
   const handlePointerEnd = useCallback(() => {
@@ -264,17 +292,24 @@ export default function AdminAgenda() {
   }
 
   const handleSaveAgenda = async () => {
-    const payload = Object.entries(pendingChanges)
-      .map(([fotografoId, cambios]) => ({
-        fotografoId: Number(fotografoId),
-        cambios: Object.entries(cambios || {}).map(([fecha, info]) => ({
-          fecha,
-          disponible: Boolean(info?.disponible)
-        }))
-      }))
-      .filter(entry => entry.cambios.length)
+    const updates = []
 
-    if (!payload.length) {
+    Object.entries(pendingChanges).forEach(([fotografoId, cambios]) => {
+      Object.entries(cambios || {}).forEach(([fecha, info]) => {
+        if (!fecha) return
+        const currentEntry = availability[fotografoId]?.[fecha]
+        const initialEntry = initialAvailability[fotografoId]?.[fecha]
+        updates.push({
+          idfotografo: Number(fotografoId),
+          fecha,
+          horainicio: normalizeTime(info?.horainicio || currentEntry?.horainicio || initialEntry?.horainicio, '08:00'),
+          horafin: normalizeTime(info?.horafin || currentEntry?.horafin || initialEntry?.horafin, '17:00'),
+          disponible: Boolean(info?.disponible)
+        })
+      })
+    })
+
+    if (!updates.length) {
       setToast({ type: 'warning', message: 'No hay cambios pendientes para guardar.' })
       return
     }
@@ -282,18 +317,23 @@ export default function AdminAgenda() {
     setSaving(true)
 
     try {
-      const response = await fetch('/api/agenda/disponibilidad', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actualizaciones: payload })
-      })
+      await Promise.all(
+        updates.map(async update => {
+          if (!update.fecha) return
+          const response = await fetch(`/api/agenda/${update.idfotografo}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(update)
+          })
 
-      if (!response.ok) {
-        throw new Error('Error en la actualización de agenda')
-      }
+          if (!response.ok) {
+            const detail = await response.text().catch(() => '')
+            throw new Error(detail || 'Error en la actualización de agenda')
+          }
+        })
+      )
 
-      const cambiosTotales = payload.reduce((acc, item) => acc + item.cambios.length, 0)
-      setToast({ type: 'success', message: `Agenda actualizada para ${cambiosTotales} días.` })
+      setToast({ type: 'success', message: '✅ Agenda actualizada correctamente' })
       setInitialAvailability(cloneAvailabilityMap(availability))
       setPendingChanges({})
       await loadAgenda()
@@ -311,6 +351,15 @@ export default function AdminAgenda() {
       window.localStorage.setItem('admin-agenda-selected-day', selectedDayForFilter)
     }
     navigate(`/admin/reservas?agendaDia=${selectedDayForFilter}`)
+  }
+
+  const handleClearSelectedDay = async () => {
+    setSelectedDayForFilter(null)
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('admin-agenda-selected-day')
+    }
+    await loadAgenda()
+    setToast({ type: 'success', message: 'Filtro de fecha eliminado' })
   }
 
   const renderDay = day => {
@@ -452,6 +501,14 @@ export default function AdminAgenda() {
                     disabled={!selectedDayForFilter}
                   >
                     Ver reservas del {selectedDayForFilter ? formatHumanDate(selectedDayForFilter) : 'día seleccionado'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={handleClearSelectedDay}
+                    disabled={!selectedDayForFilter || loading}
+                  >
+                    ❌ Limpiar filtro
                   </button>
                 </div>
               </div>

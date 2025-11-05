@@ -171,6 +171,7 @@ export default function MiCuenta () {
         idestado_pago,
         nombre_actividad,
         ubicacion,
+        updated_at,
         estado_pago:estado_pago ( id, nombre_estado ),
         paquete:paquete(nombre_paquete, precio),
         agenda:agenda(
@@ -261,6 +262,25 @@ export default function MiCuenta () {
         console.error('No se pudo verificar la reseña del usuario', resenasError)
       }
 
+      const updateCandidates = [
+        reserva.updated_at,
+        agenda?.fecha ? `${agenda.fecha}T${agenda.horafin || agenda.horainicio || '00:00:00'}` : null,
+        ...pagos.map(pago => pago.fecha_pago)
+      ].filter(Boolean)
+
+      const ultimaActualizacion = (() => {
+        if (!updateCandidates.length) return null
+        const validDates = updateCandidates
+          .map(value => {
+            const date = new Date(value)
+            return Number.isNaN(date.getTime()) ? null : date
+          })
+          .filter(Boolean)
+        if (!validDates.length) return null
+        const latest = validDates.reduce((latest, current) => (current > latest ? current : latest))
+        return latest.toISOString()
+      })()
+
       return {
         ...reserva,
         agenda,
@@ -272,7 +292,8 @@ export default function MiCuenta () {
         saldoPendiente: progress.remaining,
         porcentajePagado: progress.percentage,
         estadoPagoInfo,
-        estado_pago: estadoPagoInfo.label
+        estado_pago: estadoPagoInfo.label,
+        ultimaActualizacion
       }
     }))
 
@@ -292,14 +313,29 @@ export default function MiCuenta () {
     fetchEstadosPago()
   }, [])
 
-  const reservasConAgenda = useMemo(() => reservas.map((reserva) => ({
-    ...reserva,
-    agenda: normalizeSingle(reserva.agenda),
-    paquete: normalizeSingle(reserva.paquete),
-    resenas: ensureArray(reserva.resenas),
-    estado_actividad: normalizeSingle(reserva.estado_actividad),
-    pago: ensureArray(reserva.pago)
-  })), [reservas])
+  const reservasConAgenda = useMemo(() => {
+    const normalizadas = reservas.map((reserva) => ({
+      ...reserva,
+      agenda: normalizeSingle(reserva.agenda),
+      paquete: normalizeSingle(reserva.paquete),
+      resenas: ensureArray(reserva.resenas),
+      estado_actividad: normalizeSingle(reserva.estado_actividad),
+      pago: ensureArray(reserva.pago)
+    }))
+
+    return normalizadas.sort((a, b) => {
+      const fechaA = parseDate(a.agenda?.fecha)
+      const fechaB = parseDate(b.agenda?.fecha)
+      if (fechaA && fechaB) {
+        const diff = fechaB.getTime() - fechaA.getTime()
+        if (diff !== 0) return diff
+        return (Number(b.id) || 0) - (Number(a.id) || 0)
+      }
+      if (fechaA) return -1
+      if (fechaB) return 1
+      return (Number(b.id) || 0) - (Number(a.id) || 0)
+    })
+  }, [reservas])
 
   useEffect(() => {
     if (reservasConAgenda.length === 0) return
@@ -485,6 +521,9 @@ export default function MiCuenta () {
             const saldoPendienteDisplay = formatCurrencyGTQ(reserva.saldoPendiente)
             const precioPaqueteDisplay = formatCurrencyGTQ(paquete?.precio)
             const estadoPagoInfo = reserva.estadoPagoInfo || getPaymentStateClasses(reserva.estado_pago, paymentStates)
+            const ultimaActualizacionDisplay = reserva.ultimaActualizacion
+              ? formatDateTime(reserva.ultimaActualizacion)
+              : 'Sin registro reciente'
 
             const estadoActualId = reserva.idestado_actividad ?? reserva?.estado_actividad?.id
             const ordenActual = estadoOrdenPorId.get(estadoActualId) ?? reserva?.estado_actividad?.orden ?? estadosOrdenados.find((estado) => normalizeEstadoNombre(estado.nombre_estado) === estadoActualNombre)?.orden ?? 0
@@ -608,6 +647,9 @@ return (
                             Estado actual: {reserva?.estado_actividad?.nombre_estado || 'Pendiente'}
                           </span>
                         </div>
+                        <p className="text-xs text-[#3b302a]/70">
+                          Última actualización: {ultimaActualizacionDisplay}
+                        </p>
                         <ol className="flex gap-4 overflow-x-auto pb-2 md:gap-6">
                           {pasos.map((paso) => {
                             const isCompleted = paso.status === 'completed'

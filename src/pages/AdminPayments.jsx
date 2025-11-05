@@ -905,41 +905,106 @@ export default function AdminPayments(){
       </div>
 
       {selectedInvoice && (
-        <div className="admin-section print:p-0">
-          <header className="flex flex-wrap justify-between gap-3 mb-4 print:hidden">
-            <h2 className="text-lg font-semibold text-umber">Factura del pago</h2>
-            <div className="flex gap-2">
+        <div className="admin-section space-y-4 print:p-0">
+          <header className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+            <h2 className="text-lg font-semibold text-umber">Comprobante de pago</h2>
+            <div className="flex flex-wrap items-center gap-2">
               <button className="btn btn-ghost" onClick={() => setSelectedInvoice(null)}>Cerrar</button>
-              <button className="btn btn-primary" onClick={onImprimir}>Imprimir</button>
+              <button type="button" className="print-button" onClick={onImprimir}>
+                🖨️ Imprimir comprobante
+              </button>
             </div>
           </header>
-          <div className="grid gap-2 text-sm">
-            <div><strong>Reserva:</strong> #{selectedInvoice.actividad?.id ?? selectedInvoice.pago?.actividadId}</div>
-            <div><strong>Cliente:</strong> {selectedInvoice.actividad?.cliente || selectedInvoice.pago?.cliente}</div>
-            <div><strong>Paquete:</strong> {selectedInvoice.actividad?.paquete || selectedInvoice.pago?.paquete}</div>
-            <div><strong>Monto:</strong> {formatCurrency(selectedInvoice.pago?.monto)}</div>
-            <div><strong>Método:</strong> {selectedInvoice.pago?.metodoPago}</div>
-            <div><strong>Tipo de pago:</strong> {selectedInvoice.pago?.tipoPago || 'Pago'}</div>
-            <div>
-              <strong>Estado:</strong>{' '}
-              <span
-                className={`inline-flex items-center rounded-full px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.25em] ${selectedInvoice.pago?.estadoPagoInfo?.badgeClass || 'bg-amber-100 text-amber-700'}`}
-              >
-                {selectedInvoice.pago?.estadoPago || 'Pendiente'}
-              </span>
+
+          <section className="payment-receipt">
+            <div className="payment-receipt__header">
+              <img src="/img/logo-mark.svg" alt="Logo de FotoEstudio" className="payment-receipt__logo" />
+              <h3 className="payment-receipt__title">FotoEstudio</h3>
+              <p className="payment-receipt__subtitle">
+                Comprobante emitido el {formatDate(selectedInvoice.pago?.fechaPago)}
+              </p>
             </div>
-            <div><strong>Fecha de pago:</strong> {formatDate(selectedInvoice.pago?.fechaPago)}</div>
-            {selectedInvoice.pago?.detallePago && (
-              <div><strong>Detalle:</strong> {selectedInvoice.pago.detallePago}</div>
-            )}
-            {selectedInvoice.actividad?.agendaFecha && (
-              <div>
-                <strong>Sesión programada:</strong>{' '}
-                {new Date(selectedInvoice.actividad.agendaFecha).toLocaleDateString('es-GT')}
-                {selectedInvoice.actividad.agendaHora && ` · ${selectedInvoice.actividad.agendaHora.slice(0, 5)}`}
+
+            <div className="payment-receipt__details">
+              <div className="payment-receipt__row">
+                <div className="payment-receipt__item">
+                  <p className="payment-receipt__label">Número de reserva</p>
+                  <p className="payment-receipt__value">
+                    #{selectedInvoice.actividad?.id ?? selectedInvoice.pago?.actividadId}
+                  </p>
+                </div>
+                <div className="payment-receipt__item">
+                  <p className="payment-receipt__label">Cliente</p>
+                  <p className="payment-receipt__value">
+                    {selectedInvoice.actividad?.cliente || selectedInvoice.pago?.cliente}
+                  </p>
+                </div>
+                <div className="payment-receipt__item">
+                  <p className="payment-receipt__label">Paquete contratado</p>
+                  <p className="payment-receipt__value">
+                    {selectedInvoice.actividad?.paquete || selectedInvoice.pago?.paquete}
+                  </p>
+                </div>
               </div>
-            )}
-          </div>
+
+              <div className="payment-receipt__row">
+                <div className="payment-receipt__item">
+                  <p className="payment-receipt__label">Monto recibido</p>
+                  <p className="payment-receipt__value">{formatCurrency(selectedInvoice.pago?.monto)}</p>
+                </div>
+                <div className="payment-receipt__item">
+                  <p className="payment-receipt__label">Método de pago</p>
+                  <p className="payment-receipt__value">{selectedInvoice.pago?.metodoPago}</p>
+                </div>
+                <div className="payment-receipt__item">
+                  <p className="payment-receipt__label">Tipo de pago</p>
+                  <p className="payment-receipt__value">{selectedInvoice.pago?.tipoPago || 'Pago'}</p>
+                </div>
+              </div>
+
+              <div className="payment-receipt__row">
+                <div className="payment-receipt__item">
+                  <p className="payment-receipt__label">Estado del pago</p>
+                  <p className="payment-receipt__value">
+                    <span
+                      className={`inline-flex items-center rounded-full px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.25em] ${selectedInvoice.pago?.estadoPagoInfo?.badgeClass || 'bg-amber-100 text-amber-700'}`}
+                    >
+                      {selectedInvoice.pago?.estadoPago || 'Pendiente'}
+                    </span>
+                  </p>
+                </div>
+                <div className="payment-receipt__item">
+                  <p className="payment-receipt__label">Fecha del pago</p>
+                  <p className="payment-receipt__value">{formatDate(selectedInvoice.pago?.fechaPago)}</p>
+                </div>
+                <div className="payment-receipt__item">
+                  <p className="payment-receipt__label">Referencia</p>
+                  <p className="payment-receipt__value">
+                    {selectedInvoice.pago?.detallePago || 'Sin referencia adicional'}
+                  </p>
+                </div>
+              </div>
+
+              {selectedInvoice.actividad?.agendaFecha && (
+                <div>
+                  <div className="payment-receipt__divider" />
+                  <div className="payment-receipt__row">
+                    <div className="payment-receipt__item">
+                      <p className="payment-receipt__label">Sesión programada</p>
+                      <p className="payment-receipt__value">
+                        {new Date(selectedInvoice.actividad.agendaFecha).toLocaleDateString('es-GT')}
+                        {selectedInvoice.actividad.agendaHora && ` · ${selectedInvoice.actividad.agendaHora.slice(0, 5)}`}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <p className="payment-receipt__footer">
+              Gracias por confiar en FotoEstudio. Conserva este documento como comprobante del pago recibido.
+            </p>
+          </section>
         </div>
       )}
     </div>

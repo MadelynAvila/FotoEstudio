@@ -100,6 +100,10 @@ export default function AdminReservations() {
   const [feedback, setFeedback] = useState({ type: '', message: '' })
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState(null)
+  const [photographers, setPhotographers] = useState([])
+  const [editingReserva, setEditingReserva] = useState(null)
+  const [editForm, setEditForm] = useState({ fecha: null, hora: '', idfotografo: '', estado: '' })
+  const [editSaving, setEditSaving] = useState(false)
 
   const paymentStateIds = useMemo(() => ({
     pendiente: getPaymentStateClasses(1, DEFAULT_PAYMENT_STATES).id ?? 1,
@@ -168,10 +172,19 @@ export default function AdminReservations() {
 
     if (usuariosError) console.error('Error cargando usuarios relacionados', usuariosError)
 
+    const usuariosList = Array.isArray(usuariosData) ? usuariosData : []
     const agendaMap = new Map((agendasData ?? []).map(agenda => [agenda.id, agenda]))
     const paqueteMap = new Map((paquetesData ?? []).map(paquete => [paquete.id, paquete]))
-    const usuarioMap = new Map((usuariosData ?? []).map(usuario => [usuario.id, usuario]))
+    const usuarioMap = new Map(usuariosList.map(usuario => [usuario.id, usuario]))
     const estadoMap = new Map((estadosData ?? []).map(estado => [estado.id, estado]))
+
+    const fotografoIdSet = new Set(fotografoIds.map(id => Number(id)))
+    const photographerOptions = usuariosList
+      .filter(usuario => fotografoIdSet.has(Number(usuario.id)))
+      .map(usuario => ({ id: Number(usuario.id), nombre: usuario.username || 'Sin nombre' }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }))
+
+    setPhotographers(photographerOptions)
 
     const formattedReservas = actividades.map(item => {
       const agenda = agendaMap.get(item.idagenda)
@@ -482,34 +495,39 @@ export default function AdminReservations() {
           const disableAction = entregada || updatingId === reserva.id
 
           return (
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
-              <select
-                className="rounded-2xl border border-[color:var(--border)] bg-white px-3 py-2 text-sm shadow-sm"
-                value={selectedValue}
-                onChange={event => onSelectEstado(reserva.id, event.target.value)}
-                disabled={entregada}
-              >
-                <option value="">Selecciona un estado</option>
-                {estados.map(estado => (
-                  <option key={estado.id} value={estado.id}>
-                    {estado.nombre_estado}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => actualizarEstado(reserva)}
-                disabled={disableAction || !hasSelection || sameEstado}
-              >
-                {updatingId === reserva.id ? 'Guardando…' : 'Confirmar cambio'}
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+                <select
+                  className="rounded-2xl border border-[color:var(--border)] bg-white px-3 py-2 text-sm shadow-sm"
+                  value={selectedValue}
+                  onChange={event => onSelectEstado(reserva.id, event.target.value)}
+                  disabled={entregada}
+                >
+                  <option value="">Selecciona un estado</option>
+                  {estados.map(estado => (
+                    <option key={estado.id} value={estado.id}>
+                      {estado.nombre_estado}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => actualizarEstado(reserva)}
+                  disabled={disableAction || !hasSelection || sameEstado}
+                >
+                  {updatingId === reserva.id ? 'Guardando…' : 'Confirmar cambio'}
+                </button>
+              </div>
+              <button type="button" className="edit-reserva-button" onClick={() => openEditModal(reserva)}>
+                ✏️ Editar reserva
               </button>
             </div>
           )
         }
       }
     ],
-    [estados, selection, selectedReservas, toggleReservaSelection, updatingId]
+    [estados, openEditModal, selection, selectedReservas, toggleReservaSelection, updatingId]
   )
 
   const onFilterChange = (field, value) => {
@@ -569,6 +587,107 @@ export default function AdminReservations() {
     }
 
     setUpdatingId(null)
+  }
+
+  const openEditModal = useCallback(
+    reserva => {
+      if (!reserva) return
+      const fecha = toDate(reserva.fecha)
+      setEditingReserva(reserva)
+      setEditForm({
+        fecha,
+        hora: reserva.horaInicio ? reserva.horaInicio.slice(0, 5) : '',
+        idfotografo: reserva.fotografoId ? String(reserva.fotografoId) : '',
+        estado: reserva.estadoId ? String(reserva.estadoId) : ''
+      })
+    },
+    []
+  )
+
+  const closeEditModal = () => {
+    setEditingReserva(null)
+    setEditForm({ fecha: null, hora: '', idfotografo: '', estado: '' })
+    setEditSaving(false)
+  }
+
+  const updateEditField = (field, value) => {
+    setEditForm(prev => ({ ...prev, [field]: value }))
+  }
+
+  const handleEditSubmit = async event => {
+    event.preventDefault()
+    if (!editingReserva) return
+
+    const fechaValue = editForm.fecha instanceof Date ? editForm.fecha : toDate(editForm.fecha)
+    const horaValue = (editForm.hora || '').trim()
+    const estadoValue = editForm.estado ? Number(editForm.estado) : null
+    const fotografoValue = editForm.idfotografo ? Number(editForm.idfotografo) : null
+
+    if (!fechaValue) {
+      setToast({ type: 'error', message: 'Selecciona una fecha válida.' })
+      return
+    }
+
+    if (!horaValue) {
+      setToast({ type: 'error', message: 'Selecciona una hora para la reserva.' })
+      return
+    }
+
+    if (!estadoValue) {
+      setToast({ type: 'error', message: 'Selecciona un estado para la reserva.' })
+      return
+    }
+
+    const fecha = fechaValue.toISOString().slice(0, 10)
+    const hora = horaValue.slice(0, 5)
+
+    setEditSaving(true)
+
+    try {
+      const response = await fetch(`/api/reservas/${editingReserva.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fecha,
+          hora,
+          idfotografo: fotografoValue,
+          estado: estadoValue
+        })
+      })
+
+      if (!response.ok) {
+        const detail = await response.text().catch(() => '')
+        throw new Error(detail || 'Error actualizando reserva')
+      }
+
+      const selectedEstado = estados.find(item => Number(item.id) === estadoValue)
+      const fotografoNombre = fotografoValue
+        ? photographers.find(item => item.id === fotografoValue)?.nombre || 'Sin asignar'
+        : 'Sin asignar'
+
+      setReservas(prev =>
+        prev.map(item =>
+          item.id === editingReserva.id
+            ? {
+                ...item,
+                fecha,
+                horaInicio: hora,
+                fotografoId: fotografoValue,
+                fotografo: fotografoNombre,
+                estadoId: estadoValue,
+                estadoNombre: selectedEstado?.nombre_estado || item.estadoNombre
+              }
+            : item
+        )
+      )
+      setSelection(prev => ({ ...prev, [editingReserva.id]: String(estadoValue) }))
+      setToast({ type: 'success', message: '✅ Reserva actualizada correctamente.' })
+      closeEditModal()
+    } catch (error) {
+      console.error('No se pudo actualizar la reserva', error)
+      setToast({ type: 'error', message: 'No se pudo actualizar la reserva seleccionada.' })
+      setEditSaving(false)
+    }
   }
 
   return (
@@ -782,6 +901,95 @@ export default function AdminReservations() {
                 {bulkLoading ? 'Aplicando…' : 'Aplicar cambios'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {editingReserva && (
+        <div
+          className="admin-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-reserva-title"
+          onClick={event => {
+            if (event.target === event.currentTarget && !editSaving) {
+              closeEditModal()
+            }
+          }}
+        >
+          <div className="admin-modal__content">
+            <h3 id="edit-reserva-title" className="text-lg font-semibold text-umber">
+              Editar reserva #{editingReserva.id}
+            </h3>
+            <form onSubmit={handleEditSubmit} className="mt-4 grid gap-3">
+              <AdminDatePicker
+                label="Fecha"
+                value={editForm.fecha}
+                onChange={value => {
+                  if (Array.isArray(value)) {
+                    updateEditField('fecha', value[0] ?? null)
+                  } else {
+                    updateEditField('fecha', value)
+                  }
+                }}
+                isClearable={false}
+              />
+              <label className="grid gap-1 text-sm">
+                <span className="font-semibold text-slate-700">Hora</span>
+                <input
+                  type="time"
+                  className="admin-field-input"
+                  value={editForm.hora}
+                  onChange={event => updateEditField('hora', event.target.value)}
+                  required
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="font-semibold text-slate-700">Fotógrafo asignado</span>
+                <select
+                  className="border rounded-xl2 px-3 py-2"
+                  value={editForm.idfotografo}
+                  onChange={event => updateEditField('idfotografo', event.target.value)}
+                >
+                  <option value="">Sin asignar</option>
+                  {photographers.map(fotografo => (
+                    <option key={fotografo.id} value={fotografo.id}>
+                      {fotografo.nombre}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="font-semibold text-slate-700">Estado</span>
+                <select
+                  className="border rounded-xl2 px-3 py-2"
+                  value={editForm.estado}
+                  onChange={event => updateEditField('estado', event.target.value)}
+                  required
+                >
+                  <option value="">Selecciona un estado</option>
+                  {estados.map(estado => (
+                    <option key={estado.id} value={estado.id}>
+                      {estado.nombre_estado}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={closeEditModal}
+                  disabled={editSaving}
+                >
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={editSaving}>
+                  {editSaving ? 'Guardando…' : 'Guardar cambios'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

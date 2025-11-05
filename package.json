@@ -4,10 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "node scripts/run-vite.cjs",
+    "build": "node scripts/run-vite.cjs build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "node scripts/run-vite.cjs preview"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.75.0",
