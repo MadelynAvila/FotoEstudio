@@ -19,8 +19,8 @@
   }
 
   body {
-    @apply font-sans bg-sand text-slate-700 antialiased;
-    background-image: radial-gradient(circle at top, rgba(255, 255, 255, 0.9), rgba(250, 248, 244, 0.8) 45%, rgba(235, 226, 212, 0.4));
+    @apply font-sans text-slate-700 antialiased;
+    background-color: #faf8f4;
     min-height: 100vh;
     overflow-x: hidden;
     margin: 0;
