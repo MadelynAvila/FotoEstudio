@@ -37,6 +37,11 @@ const createDefaultForm = () => {
 }
 const defaultFilters = { search: '', metodo: 'all', rangoFechas: [null, null] }
 
+const STUDIO_INFO = {
+  name: 'FotoEstudio',
+  slogan: 'Estudio fotográfico profesional'
+}
+
 function formatDate(value) {
   if (!value) return '—'
   const date = new Date(value)
@@ -78,6 +83,13 @@ function formatCurrency(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   })}`
+}
+
+function formatDateOnly(value) {
+  if (!value) return 'Fecha no disponible'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Fecha no disponible'
+  return new Intl.DateTimeFormat('es-GT', { dateStyle: 'long' }).format(date)
 }
 
 export default function AdminPayments(){
@@ -905,40 +917,109 @@ export default function AdminPayments(){
       </div>
 
       {selectedInvoice && (
-        <div className="admin-section print:p-0">
-          <header className="flex flex-wrap justify-between gap-3 mb-4 print:hidden">
-            <h2 className="text-lg font-semibold text-umber">Factura del pago</h2>
-            <div className="flex gap-2">
+        <div className="admin-section space-y-4 print:p-0">
+          <header className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+            <h2 className="text-lg font-semibold text-umber">Comprobante de pago</h2>
+            <div className="flex flex-wrap gap-2">
               <button className="btn btn-ghost" onClick={() => setSelectedInvoice(null)}>Cerrar</button>
-              <button className="btn btn-primary" onClick={onImprimir}>Imprimir</button>
+              <button type="button" className="print-button" onClick={onImprimir}>
+                🖨️ Imprimir comprobante
+              </button>
             </div>
           </header>
-          <div className="grid gap-2 text-sm">
-            <div><strong>Reserva:</strong> #{selectedInvoice.actividad?.id ?? selectedInvoice.pago?.actividadId}</div>
-            <div><strong>Cliente:</strong> {selectedInvoice.actividad?.cliente || selectedInvoice.pago?.cliente}</div>
-            <div><strong>Paquete:</strong> {selectedInvoice.actividad?.paquete || selectedInvoice.pago?.paquete}</div>
-            <div><strong>Monto:</strong> {formatCurrency(selectedInvoice.pago?.monto)}</div>
-            <div><strong>Método:</strong> {selectedInvoice.pago?.metodoPago}</div>
-            <div><strong>Tipo de pago:</strong> {selectedInvoice.pago?.tipoPago || 'Pago'}</div>
-            <div>
-              <strong>Estado:</strong>{' '}
-              <span
-                className={`inline-flex items-center rounded-full px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.25em] ${selectedInvoice.pago?.estadoPagoInfo?.badgeClass || 'bg-amber-100 text-amber-700'}`}
-              >
-                {selectedInvoice.pago?.estadoPago || 'Pendiente'}
-              </span>
-            </div>
-            <div><strong>Fecha de pago:</strong> {formatDate(selectedInvoice.pago?.fechaPago)}</div>
-            {selectedInvoice.pago?.detallePago && (
-              <div><strong>Detalle:</strong> {selectedInvoice.pago.detallePago}</div>
-            )}
-            {selectedInvoice.actividad?.agendaFecha && (
-              <div>
-                <strong>Sesión programada:</strong>{' '}
-                {new Date(selectedInvoice.actividad.agendaFecha).toLocaleDateString('es-GT')}
-                {selectedInvoice.actividad.agendaHora && ` · ${selectedInvoice.actividad.agendaHora.slice(0, 5)}`}
-              </div>
-            )}
+
+          <div className="payment-invoice-wrapper">
+            {(() => {
+              const pago = selectedInvoice.pago || {}
+              const actividad = selectedInvoice.actividad || {}
+              const cliente = actividad?.cliente || pago?.cliente || 'Cliente sin nombre'
+              const paquete = actividad?.paquete || pago?.paquete || 'Paquete sin definir'
+              const agendaFecha = actividad?.agendaFecha || null
+              const agendaHora = actividad?.agendaHora || null
+              const comprobanteNumero = pago?.id ? String(pago.id).padStart(6, '0') : '—'
+              const fechaSesion = agendaFecha ? formatDateOnly(agendaFecha) : 'Por definir'
+              const horaSesion = agendaHora ? agendaHora.slice(0, 5) : '—'
+              const fechaPago = pago?.fechaPago ? formatDate(pago.fechaPago) : 'Fecha pendiente'
+              const estadoBadgeClass = pago?.estadoPagoInfo?.badgeClass || 'bg-amber-100 text-amber-700'
+              const estadoPagoNombre = pago?.estadoPago || 'Pendiente'
+              const detallePago = pago?.detallePago || ''
+              const metodoPago = pago?.metodoPago || 'Método no especificado'
+              const tipoPago = pago?.tipoPago || 'Pago'
+              const reservaId = actividad?.id ?? pago?.actividadId
+
+              return (
+                <div className="payment-invoice">
+                  <div className="payment-invoice__header">
+                    <div className="payment-invoice__logo">FE</div>
+                    <h3 className="payment-invoice__title">{STUDIO_INFO.name}</h3>
+                    <p className="payment-invoice__subtitle">{STUDIO_INFO.slogan}</p>
+                    <p className="payment-invoice__date">Fecha de emisión: {formatDateOnly(new Date())}</p>
+                  </div>
+
+                  <section className="payment-invoice__section">
+                    <h3>Detalles del comprobante</h3>
+                    <div className="payment-invoice__grid payment-invoice__grid--two">
+                      <div>
+                        <p className="payment-invoice__item-title">Comprobante Nº</p>
+                        <p className="payment-invoice__item-value">{comprobanteNumero}</p>
+                      </div>
+                      <div>
+                        <p className="payment-invoice__item-title">Fecha de pago</p>
+                        <p className="payment-invoice__item-value">{fechaPago}</p>
+                      </div>
+                      <div>
+                        <p className="payment-invoice__item-title">Método</p>
+                        <p className="payment-invoice__item-value">{metodoPago}</p>
+                      </div>
+                      <div>
+                        <p className="payment-invoice__item-title">Tipo</p>
+                        <p className="payment-invoice__item-value">{tipoPago}</p>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="payment-invoice__section">
+                    <h3>Reserva asociada</h3>
+                    <div className="payment-invoice__grid payment-invoice__grid--two">
+                      <div>
+                        <p className="payment-invoice__item-title">Cliente</p>
+                        <p className="payment-invoice__item-value">{cliente}</p>
+                      </div>
+                      <div>
+                        <p className="payment-invoice__item-title">Reserva</p>
+                        <p className="payment-invoice__item-value">#{reservaId ?? '—'}</p>
+                      </div>
+                      <div>
+                        <p className="payment-invoice__item-title">Paquete</p>
+                        <p className="payment-invoice__item-value">{paquete}</p>
+                      </div>
+                      <div>
+                        <p className="payment-invoice__item-title">Sesión programada</p>
+                        <p className="payment-invoice__item-value">
+                          {fechaSesion}
+                          {horaSesion !== '—' ? ` · ${horaSesion}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="payment-invoice__section">
+                    <h3>Resumen de pago</h3>
+                    <div className="payment-invoice__total">
+                      <span className="payment-invoice__total-amount">{formatCurrency(pago?.monto)}</span>
+                      <span className={`payment-invoice__badge ${estadoBadgeClass}`}>{estadoPagoNombre}</span>
+                    </div>
+                    {detallePago && (
+                      <p className="mt-3 text-sm text-slate-600">Observaciones: {detallePago}</p>
+                    )}
+                  </section>
+
+                  <div className="payment-invoice__footer">
+                    Gracias por confiar en {STUDIO_INFO.name}. Este comprobante certifica que el pago fue recibido correctamente.
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         </div>
       )}

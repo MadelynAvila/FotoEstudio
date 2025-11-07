@@ -112,6 +112,7 @@ export default function MiCuenta () {
   const [estadosActividad, setEstadosActividad] = useState([])
   const [paymentStates, setPaymentStates] = useState(DEFAULT_PAYMENT_STATES)
   const [activeReservaId, setActiveReservaId] = useState(null)
+  const [lastUpdatedAt, setLastUpdatedAt] = useState(null)
 
   const fetchEstadosActividad = async () => {
     const { data, error } = await supabase
@@ -276,7 +277,17 @@ export default function MiCuenta () {
       }
     }))
 
-    setReservas(reservasConResena)
+    const ordenadas = [...reservasConResena].sort((a, b) => {
+      const fechaA = parseDate(a?.agenda?.fecha)
+      const fechaB = parseDate(b?.agenda?.fecha)
+      if (fechaA && fechaB) return fechaB - fechaA
+      if (fechaA && !fechaB) return -1
+      if (!fechaA && fechaB) return 1
+      return (b?.id ?? 0) - (a?.id ?? 0)
+    })
+
+    setReservas(ordenadas)
+    setLastUpdatedAt(new Date())
     setLoading(false)
   }, [paymentStates, supabase, user])
 
@@ -608,6 +619,11 @@ return (
                             Estado actual: {reserva?.estado_actividad?.nombre_estado || 'Pendiente'}
                           </span>
                         </div>
+                        {lastUpdatedAt && (
+                          <p className="text-xs uppercase tracking-[.25em] text-[#3b302a]/60">
+                            Última actualización: {formatDateTime(lastUpdatedAt)}
+                          </p>
+                        )}
                         <ol className="flex gap-4 overflow-x-auto pb-2 md:gap-6">
                           {pasos.map((paso) => {
                             const isCompleted = paso.status === 'completed'

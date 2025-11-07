@@ -264,36 +264,78 @@ export default function AdminAgenda() {
   }
 
   const handleSaveAgenda = async () => {
-    const payload = Object.entries(pendingChanges)
-      .map(([fotografoId, cambios]) => ({
-        fotografoId: Number(fotografoId),
-        cambios: Object.entries(cambios || {}).map(([fecha, info]) => ({
-          fecha,
-          disponible: Boolean(info?.disponible)
-        }))
-      }))
-      .filter(entry => entry.cambios.length)
+    const updates = []
 
-    if (!payload.length) {
+    Object.entries(pendingChanges).forEach(([fotografoId, cambios]) => {
+      Object.entries(cambios || {}).forEach(([fecha, info]) => {
+        updates.push({
+          idfotografo: Number(fotografoId),
+          fecha,
+          horainicio: info?.horainicio || '00:00',
+          horafin: info?.horafin || '23:59',
+          disponible: Boolean(info?.disponible)
+        })
+      })
+    })
+
+    if (!updates.length) {
       setToast({ type: 'warning', message: 'No hay cambios pendientes para guardar.' })
+      return
+    }
+
+    if (updates.some(update => !update.fecha)) {
+      setToast({ type: 'error', message: 'Selecciona una fecha válida antes de guardar.' })
       return
     }
 
     setSaving(true)
 
     try {
-      const response = await fetch('/api/agenda/disponibilidad', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actualizaciones: payload })
-      })
+      await Promise.all(
+        updates.map(async update => {
+          const response = await fetch(`/api/agenda/${update.idfotografo}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(update)
+          })
 
-      if (!response.ok) {
-        throw new Error('Error en la actualización de agenda')
-      }
+          if (!response.ok) {
+            const fallbackPayload = {
+              disponible: update.disponible,
+              fecha: update.fecha
+            }
 
-      const cambiosTotales = payload.reduce((acc, item) => acc + item.cambios.length, 0)
-      setToast({ type: 'success', message: `Agenda actualizada para ${cambiosTotales} días.` })
+            const supabaseUpdate = await supabase
+              .from('agenda')
+              .upsert(
+                [{
+                  idfotografo: update.idfotografo,
+                  fecha: update.fecha,
+                  horainicio: update.horainicio,
+                  horafin: update.horafin,
+                  disponible: update.disponible
+                }],
+                { onConflict: 'idfotografo,fecha' }
+              )
+
+            if (supabaseUpdate.error) {
+              throw supabaseUpdate.error
+            }
+
+            const { error: extraUpdateError } = await supabase
+              .from('agenda')
+              .update(fallbackPayload)
+              .eq('idfotografo', update.idfotografo)
+              .eq('fecha', update.fecha)
+
+            if (extraUpdateError) {
+              throw extraUpdateError
+            }
+          }
+        })
+      )
+
+      setToast({ type: 'success', message: '✅ Agenda actualizada correctamente' })
       setInitialAvailability(cloneAvailabilityMap(availability))
       setPendingChanges({})
       await loadAgenda()
@@ -303,6 +345,15 @@ export default function AdminAgenda() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleClearSelectedDay = async () => {
+    setSelectedDayForFilter(null)
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('admin-agenda-selected-day')
+    }
+    setToast({ type: 'success', message: 'Filtro de fecha eliminado' })
+    await loadAgenda()
   }
 
   const handleNavigateToReservas = () => {
@@ -445,14 +496,21 @@ export default function AdminAgenda() {
                     <span className="agenda-summary__label">Cambios pendientes</span>
                     <span className="agenda-summary__value">{totalCambios}</span>
                   </div>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={handleNavigateToReservas}
-                    disabled={!selectedDayForFilter}
-                  >
-                    Ver reservas del {selectedDayForFilter ? formatHumanDate(selectedDayForFilter) : 'día seleccionado'}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {selectedDayForFilter && (
+                      <button type="button" className="agenda-clear" onClick={handleClearSelectedDay}>
+                        ❌ Limpiar fecha
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={handleNavigateToReservas}
+                      disabled={!selectedDayForFilter}
+                    >
+                      Ver reservas del {selectedDayForFilter ? formatHumanDate(selectedDayForFilter) : 'día seleccionado'}
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (

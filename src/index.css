@@ -111,6 +111,68 @@
     }
   }
 
+  .gallery-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 9999px;
+    border: 1px solid #e4ddcc;
+    background: #faf8f4;
+    color: #3b302a;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.45rem 0.95rem;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
+  }
+
+  .gallery-action:hover,
+  .gallery-action:focus-visible {
+    background: #e4ddcc;
+    box-shadow: 0 12px 24px rgba(59, 48, 42, 0.12);
+    transform: translateY(-1px);
+    outline: none;
+  }
+
+  .gallery-action:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .gallery-action--danger {
+    border-color: rgba(142, 96, 55, 0.3);
+    background: rgba(142, 96, 55, 0.12);
+    color: #8e6037;
+  }
+
+  .gallery-action--danger:hover,
+  .gallery-action--danger:focus-visible {
+    background: #8e6037;
+    color: #faf8f4;
+  }
+
+  .reservation-edit-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.5rem 1rem;
+    border-radius: 9999px;
+    border: none;
+    background: #8e6037;
+    color: #faf8f4;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .reservation-edit-button:hover,
+  .reservation-edit-button:focus-visible {
+    background: #5a463c;
+    transform: translateY(-1px);
+    box-shadow: 0 12px 24px rgba(90, 70, 60, 0.2);
+    outline: none;
+  }
+
   .btn-primary {
     @apply text-white border-transparent shadow-md shadow-umber/20;
     background-color: #3b302a;
@@ -1032,7 +1094,7 @@
     justify-content: center;
     font-weight: 600;
     color: #3b302a;
-    transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+    transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
   }
 
   .agenda-day__number {
@@ -1052,8 +1114,9 @@
 
   .agenda-day--available {
     background: #8e6037;
-    color: #fff;
+    color: #faf8f4;
     box-shadow: 0 12px 24px rgba(142, 96, 55, 0.25);
+    border-color: rgba(142, 96, 55, 0.65);
   }
 
   .agenda-day--busy {
@@ -1074,6 +1137,9 @@
   }
 
   .agenda-day--selected {
+    background: #8e6037;
+    color: #faf8f4;
+    border-color: rgba(142, 96, 55, 0.9);
     box-shadow: 0 0 0 3px rgba(142, 96, 55, 0.45);
   }
 
@@ -1081,6 +1147,7 @@
   .agenda-day:not(.agenda-day--label):focus-visible {
     transform: translateY(-2px);
     box-shadow: 0 16px 32px rgba(59, 48, 42, 0.18);
+    border-color: #e4ddcc;
     outline: none;
   }
 
@@ -1096,12 +1163,227 @@
     padding: 1rem 1.5rem;
   }
 
+  .agenda-clear {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.85rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(142, 96, 55, 0.2);
+    background: rgba(228, 221, 204, 0.4);
+    color: #8e6037;
+    font-size: 0.75rem;
+    font-weight: 600;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+  }
+
+  .agenda-clear:hover,
+  .agenda-clear:focus-visible {
+    background: rgba(142, 96, 55, 0.15);
+    transform: translateY(-1px);
+    outline: none;
+  }
+
   .agenda-summary {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     font-size: 0.9rem;
     color: #5b4636;
+  }
+
+  .print-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 0.8rem;
+    background-color: #8e6037;
+    color: #faf8f4;
+    padding: 0.6rem 1.2rem;
+    font-weight: 600;
+    border: none;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+  }
+
+  .print-button:hover,
+  .print-button:focus-visible {
+    background-color: #5a463c;
+    transform: translateY(-1px);
+    outline: none;
+  }
+
+  .payment-invoice-wrapper {
+    background: #fff;
+    border-radius: 1.5rem;
+    border: 1px solid rgba(142, 96, 55, 0.2);
+    box-shadow: 0 24px 48px rgba(59, 48, 42, 0.08);
+    padding: 2rem;
+  }
+
+  .payment-invoice {
+    display: grid;
+    gap: 1.5rem;
+    color: #3b302a;
+  }
+
+  .payment-invoice__header {
+    text-align: center;
+    border-bottom: 1px solid rgba(228, 221, 204, 0.8);
+    padding-bottom: 1.5rem;
+  }
+
+  .payment-invoice__logo {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 0.75rem auto;
+    width: 64px;
+    height: 64px;
+    border-radius: 9999px;
+    background: rgba(142, 96, 55, 0.15);
+    color: #8e6037;
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
+
+  .payment-invoice__title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.8rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .payment-invoice__subtitle {
+    font-size: 0.95rem;
+    color: rgba(59, 48, 42, 0.7);
+  }
+
+  .payment-invoice__date {
+    font-size: 0.85rem;
+    color: rgba(59, 48, 42, 0.7);
+    margin-top: 0.5rem;
+  }
+
+  .payment-invoice__section {
+    border: 1px solid rgba(228, 221, 204, 0.8);
+    border-radius: 1.25rem;
+    padding: 1.25rem;
+    background: rgba(250, 248, 244, 0.8);
+  }
+
+  .payment-invoice__section h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+  }
+
+  .payment-invoice__grid {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  @media (min-width: 640px) {
+    .payment-invoice__grid--two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  .payment-invoice__item-title {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3em;
+    color: rgba(59, 48, 42, 0.65);
+    font-weight: 600;
+  }
+
+  .payment-invoice__item-value {
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+
+  .payment-invoice__total {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    text-align: center;
+  }
+
+  .payment-invoice__total-amount {
+    font-size: 1.5rem;
+    font-family: 'Playfair Display', serif;
+    color: #8e6037;
+  }
+
+  .payment-invoice__footer {
+    text-align: center;
+    font-size: 0.75rem;
+    color: rgba(59, 48, 42, 0.6);
+    border-top: 1px solid rgba(228, 221, 204, 0.8);
+    padding-top: 1rem;
+  }
+
+  .payment-invoice__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.4rem 1rem;
+    border-radius: 9999px;
+    background: rgba(142, 96, 55, 0.12);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #8e6037;
+  }
+
+  .payment-invoice__separator {
+    height: 1px;
+    width: 100%;
+    background: rgba(228, 221, 204, 0.8);
+  }
+
+  @media print {
+    @page {
+      margin: 2.5cm;
+    }
+
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: #ffffff;
+      color: #3b302a;
+    }
+
+    h1,
+    h2,
+    h3 {
+      font-family: 'Playfair Display', serif;
+      color: #3b302a;
+    }
+
+    .admin-topbar,
+    .admin-toast,
+    .btn,
+    .print-button,
+    .btn-ghost,
+    .btn-primary,
+    .bulk-action-button,
+    .bulk-action-apply {
+      display: none !important;
+    }
+
+    .admin-section,
+    .payment-invoice-wrapper {
+      background: #fff !important;
+      border: none !important;
+      box-shadow: none !important;
+      padding: 0 !important;
+    }
+
+    .payment-invoice {
+      gap: 1.25rem;
+    }
+
+    .payment-invoice__section {
+      background: transparent;
+    }
   }
 
   .agenda-summary__label {
