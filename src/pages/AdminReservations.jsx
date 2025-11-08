@@ -100,6 +100,9 @@ export default function AdminReservations() {
   const [feedback, setFeedback] = useState({ type: '', message: '' })
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState(null)
+  const [editingReserva, setEditingReserva] = useState(null)
+  const [editForm, setEditForm] = useState({ fecha: '', hora: '', idfotografo: '', estado: '' })
+  const [savingEdit, setSavingEdit] = useState(false)
 
   const paymentStateIds = useMemo(() => ({
     pendiente: getPaymentStateClasses(1, DEFAULT_PAYMENT_STATES).id ?? 1,
@@ -397,6 +400,125 @@ export default function AdminReservations() {
     return Array.from(unique.entries()).map(([id, nombre]) => ({ id, nombre }))
   }, [reservas])
 
+  const openEditReserva = reserva => {
+    if (!reserva) return
+    const fechaValor = reserva.fecha ? String(reserva.fecha).split('T')[0] : ''
+    const horaValor = reserva.horaInicio ? String(reserva.horaInicio).slice(0, 5) : ''
+    setEditingReserva(reserva)
+    setEditForm({
+      fecha: fechaValor,
+      hora: horaValor,
+      idfotografo: reserva.fotografoId ? String(reserva.fotografoId) : '',
+      estado: reserva.estadoId ? String(reserva.estadoId) : ''
+    })
+  }
+
+  const closeEditReserva = () => {
+    setEditingReserva(null)
+    setEditForm({ fecha: '', hora: '', idfotografo: '', estado: '' })
+  }
+
+  const updateEditField = (field, value) => {
+    setEditForm(prev => ({ ...prev, [field]: value }))
+  }
+
+  const handleEditSubmit = async event => {
+    event.preventDefault()
+    if (!editingReserva) return
+
+    const fecha = editForm.fecha.trim()
+    const hora = editForm.hora.trim()
+    const idfotografo = editForm.idfotografo ? Number(editForm.idfotografo) : null
+    const estadoId = editForm.estado ? Number(editForm.estado) : null
+
+    if (!fecha) {
+      setToast({ type: 'error', message: 'Selecciona una fecha para la reserva.' })
+      return
+    }
+
+    if (!hora) {
+      setToast({ type: 'error', message: 'Ingresa una hora válida para la reserva.' })
+      return
+    }
+
+    const estadoSeleccionado = estadoId
+      ? estados.find(item => Number(item.id) === estadoId)?.nombre_estado || ''
+      : ''
+
+    const payload = {
+      fecha,
+      hora,
+      idfotografo,
+      estado: estadoSeleccionado
+    }
+
+    setSavingEdit(true)
+
+    try {
+      const response = await fetch(`/api/reservas/${editingReserva.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+
+      if (!response.ok) {
+        const agendaUpdate = {
+          fecha,
+          horainicio: hora,
+          horafin: editingReserva.horaFin ? String(editingReserva.horaFin).slice(0, 5) : hora,
+          idfotografo: idfotografo
+        }
+
+        if (editingReserva.agendaId) {
+          const { error: agendaError } = await supabase
+            .from('agenda')
+            .update(agendaUpdate)
+            .eq('id', editingReserva.agendaId)
+
+          if (agendaError) throw agendaError
+        }
+
+        if (estadoId) {
+          const { error: actividadError } = await supabase
+            .from('actividad')
+            .update({ idestado_actividad: estadoId })
+            .eq('id', editingReserva.id)
+
+          if (actividadError) throw actividadError
+        }
+      }
+
+      const fotografoNombre = idfotografo
+        ? (fotografoOptions.find(option => Number(option.id) === Number(idfotografo))?.nombre || 'Fotógrafo asignado')
+        : 'Por asignar'
+      const estadoNombre = estadoSeleccionado || editingReserva.estadoNombre
+
+      setReservas(prev =>
+        prev.map(item =>
+          item.id === editingReserva.id
+            ? {
+                ...item,
+                fecha,
+                horaInicio: hora,
+                fotografoId: idfotografo,
+                fotografo: fotografoNombre,
+                estadoId: estadoId ?? item.estadoId,
+                estadoNombre
+              }
+            : item
+        )
+      )
+      setSelection(prev => ({ ...prev, [editingReserva.id]: estadoId ? String(estadoId) : '' }))
+      setToast({ type: 'success', message: '✅ Reserva actualizada correctamente.' })
+      closeEditReserva()
+    } catch (error) {
+      console.error('No se pudo actualizar la reserva', error)
+      setToast({ type: 'error', message: 'No se pudo actualizar la reserva seleccionada.' })
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
   const reservasColumns = useMemo(
     () => [
       {
@@ -468,6 +590,19 @@ export default function AdminReservations() {
             </span>
           )
         }
+      },
+      {
+        id: 'editar',
+        label: 'Editar',
+        render: (reserva) => (
+          <button
+            type="button"
+            className="reservation-edit-button"
+            onClick={() => openEditReserva(reserva)}
+          >
+            ✏️ Editar reserva
+          </button>
+        )
       },
       {
         id: 'acciones',
@@ -782,6 +917,92 @@ export default function AdminReservations() {
                 {bulkLoading ? 'Aplicando…' : 'Aplicar cambios'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {editingReserva && (
+        <div
+          className="admin-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="editar-reserva-titulo"
+          onClick={event => {
+            if (event.target === event.currentTarget) closeEditReserva()
+          }}
+        >
+          <div className="admin-modal__content max-w-xl space-y-4">
+            <header className="space-y-1">
+              <h3 id="editar-reserva-titulo" className="text-lg font-semibold text-umber">
+                Editar reserva #{editingReserva.id}
+              </h3>
+              <p className="muted text-sm">Actualiza la fecha, hora, fotógrafo asignado o el estado actual.</p>
+            </header>
+
+            <form onSubmit={handleEditSubmit} className="grid gap-3 md:grid-cols-2">
+              <label className="grid gap-1 text-sm">
+                <span className="font-medium text-slate-700">Fecha</span>
+                <input
+                  type="date"
+                  className="border rounded-xl2 px-3 py-2"
+                  value={editForm.fecha}
+                  onChange={event => updateEditField('fecha', event.target.value)}
+                  required
+                />
+              </label>
+
+              <label className="grid gap-1 text-sm">
+                <span className="font-medium text-slate-700">Hora</span>
+                <input
+                  type="time"
+                  className="border rounded-xl2 px-3 py-2"
+                  value={editForm.hora}
+                  onChange={event => updateEditField('hora', event.target.value)}
+                  required
+                />
+              </label>
+
+              <label className="grid gap-1 text-sm">
+                <span className="font-medium text-slate-700">Fotógrafo asignado</span>
+                <select
+                  className="border rounded-xl2 px-3 py-2"
+                  value={editForm.idfotografo}
+                  onChange={event => updateEditField('idfotografo', event.target.value)}
+                >
+                  <option value="">Sin asignar</option>
+                  {fotografoOptions.map(option => (
+                    <option key={option.id} value={option.id}>
+                      {option.nombre}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="grid gap-1 text-sm">
+                <span className="font-medium text-slate-700">Estado</span>
+                <select
+                  className="border rounded-xl2 px-3 py-2"
+                  value={editForm.estado}
+                  onChange={event => updateEditField('estado', event.target.value)}
+                >
+                  <option value="">Mantener actual</option>
+                  {estados.map(estado => (
+                    <option key={estado.id} value={estado.id}>
+                      {estado.nombre_estado}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="md:col-span-2 flex justify-end gap-3 pt-2">
+                <button type="button" className="btn btn-ghost" onClick={closeEditReserva}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={savingEdit}>
+                  {savingEdit ? 'Guardando…' : 'Guardar cambios'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
