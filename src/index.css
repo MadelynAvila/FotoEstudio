@@ -114,41 +114,42 @@
   .gallery-action {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.35rem;
-    border-radius: 9999px;
-    border: 1px solid #e4ddcc;
-    background: #faf8f4;
-    color: #3b302a;
+    border-radius: 1rem;
+    border: none;
+    background: #8e6037;
+    color: #faf8f4;
     font-size: 0.8rem;
     font-weight: 600;
-    padding: 0.45rem 0.95rem;
-    transition: background-color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
+    padding: 0.5rem 1.1rem;
+    box-shadow: 0 12px 22px rgba(59, 48, 42, 0.16);
+    transition: background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
   }
 
   .gallery-action:hover,
   .gallery-action:focus-visible {
-    background: #e4ddcc;
-    box-shadow: 0 12px 24px rgba(59, 48, 42, 0.12);
+    background: #5a463c;
     transform: translateY(-1px);
     outline: none;
+    box-shadow: 0 16px 28px rgba(59, 48, 42, 0.18);
   }
 
   .gallery-action:disabled {
-    opacity: 0.5;
+    opacity: 0.55;
     cursor: not-allowed;
     transform: none;
+    box-shadow: none;
   }
 
   .gallery-action--danger {
-    border-color: rgba(142, 96, 55, 0.3);
-    background: rgba(142, 96, 55, 0.12);
-    color: #8e6037;
+    background: #3b302a;
+    color: #faf8f4;
   }
 
   .gallery-action--danger:hover,
   .gallery-action--danger:focus-visible {
-    background: #8e6037;
-    color: #faf8f4;
+    background: #241c19;
   }
 
   .reservation-edit-button {
@@ -1212,6 +1213,19 @@
     outline: none;
   }
 
+  .comprobante-container {
+    border: 1px solid #e4ddcc;
+    padding: 1.5rem;
+    border-radius: 0.75rem;
+    background: #fff;
+  }
+
+  .separador,
+  .sep {
+    border-top: 1px solid #e4ddcc;
+    margin: 0.75rem 0;
+  }
+
   .payment-invoice-wrapper {
     background: #fff;
     border-radius: 1.5rem;
@@ -1346,7 +1360,7 @@
     }
 
     body {
-      font-family: 'Poppins', sans-serif;
+      font-family: 'Poppins', system-ui, sans-serif;
       background: #ffffff;
       color: #3b302a;
     }
@@ -1365,7 +1379,8 @@
     .btn-ghost,
     .btn-primary,
     .bulk-action-button,
-    .bulk-action-apply {
+    .bulk-action-apply,
+    .no-print {
       display: none !important;
     }
 
@@ -1383,6 +1398,18 @@
 
     .payment-invoice__section {
       background: transparent;
+    }
+
+    .comprobante-container {
+      border: 1px solid #e4ddcc;
+      padding: 16px;
+      border-radius: 12px;
+    }
+
+    .separador,
+    .sep {
+      border-top: 1px solid #e4ddcc;
+      margin: 12px 0;
     }
   }
 

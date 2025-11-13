@@ -194,7 +194,7 @@ export default function MiCuenta () {
       `)
       .eq('idusuario', user.id)
       .order('fecha', { foreignTable: 'agenda', ascending: false, nullsLast: true })
-      .order('horafin', { foreignTable: 'agenda', ascending: false, nullsLast: true })
+      .order('horainicio', { foreignTable: 'agenda', ascending: false, nullsLast: true })
 
     if (error) {
       console.error('No se pudieron cargar las reservas del usuario', error)
@@ -280,7 +280,18 @@ export default function MiCuenta () {
     const ordenadas = [...reservasConResena].sort((a, b) => {
       const fechaA = parseDate(a?.agenda?.fecha)
       const fechaB = parseDate(b?.agenda?.fecha)
-      if (fechaA && fechaB) return fechaB - fechaA
+      if (fechaA && fechaB) {
+        const diff = fechaB - fechaA
+        if (diff !== 0) return diff
+        const horaA = (a?.agenda?.horainicio || '').slice(0, 5)
+        const horaB = (b?.agenda?.horainicio || '').slice(0, 5)
+        if (horaA && horaB) {
+          return horaB.localeCompare(horaA)
+        }
+        if (horaA) return -1
+        if (horaB) return 1
+        return (b?.id ?? 0) - (a?.id ?? 0)
+      }
       if (fechaA && !fechaB) return -1
       if (!fechaA && fechaB) return 1
       return (b?.id ?? 0) - (a?.id ?? 0)
