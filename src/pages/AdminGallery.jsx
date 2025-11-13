@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import AdminHelpCard from '../components/AdminHelpCard'
+import useFocusTrap from '../lib/useFocusTrap'
 
 const defaultForm = {
   url: '',
@@ -26,6 +27,8 @@ export default function AdminGallery(){
   const [editForm, setEditForm] = useState(defaultEditForm)
   const [processingId, setProcessingId] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const editModalRef = useRef(null)
+  const deleteModalRef = useRef(null)
 
   const fetchData = async () => {
     setLoading(true)
@@ -132,9 +135,11 @@ export default function AdminGallery(){
         body: JSON.stringify(payload)
       })
 
-      if (!response.ok) {
-        throw new Error('Respuesta no exitosa del servicio de galería')
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || 'Respuesta no exitosa del servicio de galería')
       }
+      return result?.item ?? null
     } catch (error) {
       console.warn('Fallo la ruta /api/galeria, usando Supabase como respaldo', error)
       const updatePayload = {
@@ -146,40 +151,49 @@ export default function AdminGallery(){
         updatePayload.titulo = payload.nombre
       }
 
-      const { error: supabaseError } = await supabase
+      const { error: supabaseError, data } = await supabase
         .from('galeria_paquete')
         .update(updatePayload)
         .eq('id', id)
+        .select()
+        .maybeSingle()
 
       if (supabaseError) {
         const fallbackPayload = {
           url_imagen: payload.url,
           descripcion: payload.descripcion || payload.nombre || null
         }
-        const { error: fallbackError } = await supabase
+        const { error: fallbackError, data: fallbackData } = await supabase
           .from('galeria_paquete')
           .update(fallbackPayload)
           .eq('id', id)
+          .select()
+          .maybeSingle()
 
         if (fallbackError) {
           throw fallbackError
         }
+        return fallbackData
       }
+      return data
     }
   }
 
   const requestGalleryDelete = async (id) => {
     try {
       const response = await fetch(`/api/galeria/${id}`, { method: 'DELETE' })
-      if (!response.ok) {
-        throw new Error('No se pudo eliminar la galería desde el backend')
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || 'No se pudo eliminar la galería desde el backend')
       }
+      return result?.deletedId ?? id
     } catch (error) {
       console.warn('Fallo la ruta /api/galeria, usando Supabase como respaldo', error)
       const { error: supabaseError } = await supabase.from('galeria_paquete').delete().eq('id', id)
       if (supabaseError) {
         throw supabaseError
       }
+      return id
     }
   }
 
@@ -223,6 +237,9 @@ export default function AdminGallery(){
   const closeDeleteModal = () => {
     setDeleteTarget(null)
   }
+
+  useFocusTrap(editModalRef, Boolean(editingPhoto), closeEditModal)
+  useFocusTrap(deleteModalRef, Boolean(deleteTarget), closeDeleteModal)
 
   const handleDeleteConfirmed = async () => {
     if (!deleteTarget) return
@@ -380,6 +397,7 @@ export default function AdminGallery(){
                               className="gallery-action"
                               onClick={() => openEditModal(foto)}
                               disabled={isProcessing}
+                              aria-label={`Editar galería ${foto.nombre || foto.descripcion || foto.id}`}
                             >
                               ✏️ Editar
                             </button>
@@ -388,6 +406,7 @@ export default function AdminGallery(){
                               className="gallery-action gallery-action--danger"
                               onClick={() => confirmDeletePhoto(foto)}
                               disabled={isProcessing}
+                              aria-label={`Eliminar galería ${foto.nombre || foto.descripcion || foto.id}`}
                             >
                               🗑️ Eliminar
                             </button>
@@ -417,7 +436,7 @@ export default function AdminGallery(){
             if (event.target === event.currentTarget) closeEditModal()
           }}
         >
-          <div className="admin-modal__content max-w-lg">
+          <div ref={editModalRef} className="admin-modal__content max-w-lg" tabIndex={-1}>
             <form onSubmit={handleEditSubmit} className="space-y-4">
               <header className="space-y-2">
                 <h3 id="editar-galeria-titulo" className="text-lg font-semibold text-umber">
@@ -484,7 +503,7 @@ export default function AdminGallery(){
             if (event.target === event.currentTarget) closeDeleteModal()
           }}
         >
-          <div className="admin-modal__content max-w-md space-y-4">
+          <div ref={deleteModalRef} className="admin-modal__content max-w-md space-y-4" tabIndex={-1}>
             <div className="space-y-2">
               <h3 id="eliminar-galeria-titulo" className="text-lg font-semibold text-umber">
                 ¿Eliminar galería?

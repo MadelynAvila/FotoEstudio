@@ -424,12 +424,12 @@ export default function AdminPayments(){
       ? 'Saldo'
       : PAYMENT_TYPES[0].value
 
-    setForm(prev => ({
+    setForm({
       ...createDefaultForm(),
       idactividad: value,
       monto: monto > 0 ? String(monto.toFixed(2)) : '',
       tipoPago
-    }))
+    })
   }
 
   useEffect(() => {
@@ -920,15 +920,20 @@ export default function AdminPayments(){
         <div className="admin-section space-y-4 print:p-0">
           <header className="flex flex-wrap items-center justify-between gap-3 print:hidden">
             <h2 className="text-lg font-semibold text-umber">Comprobante de pago</h2>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 no-print">
               <button className="btn btn-ghost" onClick={() => setSelectedInvoice(null)}>Cerrar</button>
-              <button type="button" className="print-button" onClick={onImprimir}>
+              <button
+                type="button"
+                className="print-button no-print"
+                onClick={onImprimir}
+                aria-label="Imprimir comprobante"
+              >
                 🖨️ Imprimir comprobante
               </button>
             </div>
           </header>
 
-          <div className="payment-invoice-wrapper">
+          <div className="payment-invoice-wrapper comprobante-container">
             {(() => {
               const pago = selectedInvoice.pago || {}
               const actividad = selectedInvoice.actividad || {}
@@ -978,6 +983,8 @@ export default function AdminPayments(){
                     </div>
                   </section>
 
+                  <div className="separador" aria-hidden="true" />
+
                   <section className="payment-invoice__section">
                     <h3>Reserva asociada</h3>
                     <div className="payment-invoice__grid payment-invoice__grid--two">
@@ -1002,6 +1009,8 @@ export default function AdminPayments(){
                       </div>
                     </div>
                   </section>
+
+                  <div className="separador" aria-hidden="true" />
 
                   <section className="payment-invoice__section">
                     <h3>Resumen de pago</h3>
