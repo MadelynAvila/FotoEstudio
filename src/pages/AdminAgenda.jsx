@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabaseClient'
 import AdminHelpCard from '../components/AdminHelpCard'
 
 const DAY_LABELS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
+const DEFAULT_DAY_START = '08:00'
+const DEFAULT_DAY_END = '17:00'
 
 function formatDateKey(value) {
   const date = new Date(value)
@@ -264,26 +266,25 @@ export default function AdminAgenda() {
   }
 
   const handleSaveAgenda = async () => {
-    const updates = []
+    const grouped = Object.entries(pendingChanges).reduce((acc, [fotografoId, cambios]) => {
+      const registros = Object.entries(cambios || {}).map(([fecha, info]) => ({
+        fecha,
+        horainicio: info?.horainicio || DEFAULT_DAY_START,
+        horafin: info?.horafin || DEFAULT_DAY_END,
+        disponible: Boolean(info?.disponible)
+      }))
+      if (registros.length) {
+        acc.push({ id: Number(fotografoId), registros })
+      }
+      return acc
+    }, [])
 
-    Object.entries(pendingChanges).forEach(([fotografoId, cambios]) => {
-      Object.entries(cambios || {}).forEach(([fecha, info]) => {
-        updates.push({
-          idfotografo: Number(fotografoId),
-          fecha,
-          horainicio: info?.horainicio || '00:00',
-          horafin: info?.horafin || '23:59',
-          disponible: Boolean(info?.disponible)
-        })
-      })
-    })
-
-    if (!updates.length) {
+    if (!grouped.length) {
       setToast({ type: 'warning', message: 'No hay cambios pendientes para guardar.' })
       return
     }
 
-    if (updates.some(update => !update.fecha)) {
+    if (grouped.some(entry => entry.registros.some(registro => !registro.fecha))) {
       setToast({ type: 'error', message: 'Selecciona una fecha válida antes de guardar.' })
       return
     }
@@ -291,57 +292,53 @@ export default function AdminAgenda() {
     setSaving(true)
 
     try {
-      await Promise.all(
-        updates.map(async update => {
-          const response = await fetch(`/api/agenda/${update.idfotografo}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(update)
-          })
-
-          if (!response.ok) {
-            const fallbackPayload = {
-              disponible: update.disponible,
-              fecha: update.fecha
+      const responses = await Promise.all(
+        grouped.map(async ({ id: fotografoId, registros }) => {
+          try {
+            const response = await fetch(`/api/agenda/${fotografoId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ registros })
+            })
+            const result = await response.json().catch(() => null)
+            if (!response.ok || !result?.success) {
+              throw new Error(result?.message || 'No se pudo actualizar la agenda en el servicio.')
             }
-
-            const supabaseUpdate = await supabase
+            return result
+          } catch (error) {
+            console.warn(`No se pudo actualizar la agenda del fotógrafo ${fotografoId} mediante la API`, error)
+            const supabasePayload = registros.map(registro => ({
+              idfotografo: fotografoId,
+              fecha: registro.fecha,
+              horainicio: registro.horainicio,
+              horafin: registro.horafin,
+              disponible: registro.disponible
+            }))
+            const { data, error: supabaseError } = await supabase
               .from('agenda')
-              .upsert(
-                [{
-                  idfotografo: update.idfotografo,
-                  fecha: update.fecha,
-                  horainicio: update.horainicio,
-                  horafin: update.horafin,
-                  disponible: update.disponible
-                }],
-                { onConflict: 'idfotografo,fecha' }
-              )
+              .upsert(supabasePayload, { onConflict: 'idfotografo,fecha' })
+              .select()
 
-            if (supabaseUpdate.error) {
-              throw supabaseUpdate.error
+            if (supabaseError) {
+              throw supabaseError
             }
 
-            const { error: extraUpdateError } = await supabase
-              .from('agenda')
-              .update(fallbackPayload)
-              .eq('idfotografo', update.idfotografo)
-              .eq('fecha', update.fecha)
-
-            if (extraUpdateError) {
-              throw extraUpdateError
-            }
+            return { success: true, upserted: data?.length ?? supabasePayload.length }
           }
         })
       )
 
-      setToast({ type: 'success', message: '✅ Agenda actualizada correctamente' })
+      const totalActualizados = responses.reduce((total, result) => total + (result?.upserted ?? 0), 0)
+      const mensaje =
+        responses.find(result => result?.message)?.message ||
+        `✅ Agenda actualizada correctamente (${totalActualizados} registro${totalActualizados === 1 ? '' : 's'})`
+      setToast({ type: 'success', message: mensaje })
       setInitialAvailability(cloneAvailabilityMap(availability))
       setPendingChanges({})
       await loadAgenda()
     } catch (error) {
       console.error('Error guardando agenda', error)
-      setToast({ type: 'error', message: 'No se pudieron guardar los cambios de agenda.' })
+      setToast({ type: 'error', message: error?.message || 'No se pudieron guardar los cambios de agenda.' })
     } finally {
       setSaving(false)
     }
@@ -425,7 +422,13 @@ export default function AdminAgenda() {
             <p className="muted text-sm">Administra los días disponibles de cada miembro del equipo.</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <button type="button" className="btn btn-ghost" onClick={loadAgenda} disabled={loading}>
+            <button
+              type="button"
+              className="bulk-action-button"
+              onClick={loadAgenda}
+              disabled={loading}
+              aria-label="Recargar agenda"
+            >
               {loading ? 'Cargando…' : 'Recargar agenda'}
             </button>
             <button
@@ -498,8 +501,14 @@ export default function AdminAgenda() {
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {selectedDayForFilter && (
-                      <button type="button" className="agenda-clear" onClick={handleClearSelectedDay}>
-                        ❌ Limpiar fecha
+                      <button
+                        type="button"
+                        className="agenda-clear"
+                        onClick={handleClearSelectedDay}
+                        aria-label="Quitar fecha seleccionada"
+                      >
+                        <span aria-hidden="true">✕</span>
+                        <span className="ml-1">Quitar fecha</span>
                       </button>
                     )}
                     <button

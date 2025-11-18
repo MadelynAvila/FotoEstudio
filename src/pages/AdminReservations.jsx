@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import DEFAULT_PAYMENT_STATES, { getPaymentStateClasses } from '../lib/paymentStates'
 import AdminHelpCard from '../components/AdminHelpCard'
 import AdminDataTable from '../components/AdminDataTable'
 import AdminDatePicker from '../components/AdminDatePicker'
+import useFocusTrap from '../lib/useFocusTrap'
 
 const estadoColorStyles = {
   pendiente: { bg: '#FFF8E1', text: '#8A6D3B' },
@@ -103,6 +104,8 @@ export default function AdminReservations() {
   const [editingReserva, setEditingReserva] = useState(null)
   const [editForm, setEditForm] = useState({ fecha: '', hora: '', idfotografo: '', estado: '' })
   const [savingEdit, setSavingEdit] = useState(false)
+  const bulkModalRef = useRef(null)
+  const editModalRef = useRef(null)
 
   const paymentStateIds = useMemo(() => ({
     pendiente: getPaymentStateClasses(1, DEFAULT_PAYMENT_STATES).id ?? 1,
@@ -294,6 +297,11 @@ export default function AdminReservations() {
     })
   }, [])
 
+  const closeBulkModal = useCallback(() => {
+    setBulkActionOpen(false)
+    setBulkEstadoNombre('')
+  }, [])
+
   const handleBulkApply = async () => {
     if (!bulkEstadoNombre || !selectedReservas.length) return
 
@@ -311,11 +319,12 @@ export default function AdminReservations() {
         body: JSON.stringify({ reservas: selectedReservas, nuevo_estado: bulkEstadoNombre })
       })
 
-      if (!response.ok) {
-        throw new Error('Solicitud rechazada')
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || 'Solicitud rechazada')
       }
 
-      const cantidad = selectedReservas.length
+      const cantidad = result?.updated ?? selectedReservas.length
 
       if (nuevoEstadoId) {
         const estadoActualizado = estados.find(item => Number(item.id) === nuevoEstadoId)
@@ -359,14 +368,19 @@ export default function AdminReservations() {
         )
       }
 
-      setToast({ type: 'success', message: `✅ Se actualizaron ${cantidad} reservas correctamente.` })
+      setToast({
+        type: 'success',
+        message: result?.message || `✅ Se actualizaron ${cantidad} reservas correctamente.`
+      })
       setSelectedReservas([])
-      setBulkActionOpen(false)
-      setBulkEstadoNombre('')
+      closeBulkModal()
       setFeedback({ type: '', message: '' })
     } catch (error) {
       console.error('Error actualizando reservas masivamente', error)
-      setToast({ type: 'error', message: 'No se pudieron actualizar las reservas seleccionadas.' })
+      setToast({
+        type: 'error',
+        message: error?.message || 'No se pudieron actualizar las reservas seleccionadas.'
+      })
     } finally {
       setBulkLoading(false)
     }
@@ -422,6 +436,9 @@ export default function AdminReservations() {
     setEditForm(prev => ({ ...prev, [field]: value }))
   }
 
+  useFocusTrap(bulkModalRef, bulkActionOpen, closeBulkModal)
+  useFocusTrap(editModalRef, Boolean(editingReserva), closeEditReserva)
+
   const handleEditSubmit = async event => {
     event.preventDefault()
     if (!editingReserva) return
@@ -455,13 +472,24 @@ export default function AdminReservations() {
     setSavingEdit(true)
 
     try {
-      const response = await fetch(`/api/reservas/${editingReserva.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      })
+      let successMessage = '✅ Reserva actualizada correctamente.'
+      try {
+        const response = await fetch(`/api/reservas/${editingReserva.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
 
-      if (!response.ok) {
+        const result = await response.json().catch(() => null)
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.message || 'No se pudo actualizar la reserva desde el servicio.')
+        }
+
+        if (result?.message) {
+          successMessage = result.message
+        }
+      } catch (apiError) {
+        console.warn('Fallo la ruta /api/reservas/:id, usando Supabase como respaldo', apiError)
         const agendaUpdate = {
           fecha,
           horainicio: hora,
@@ -476,6 +504,18 @@ export default function AdminReservations() {
             .eq('id', editingReserva.agendaId)
 
           if (agendaError) throw agendaError
+        } else if (idfotografo) {
+          const { error: agendaInsertError } = await supabase
+            .from('agenda')
+            .upsert({
+              idfotografo,
+              fecha,
+              horainicio: hora,
+              horafin: hora,
+              disponible: false
+            }, { onConflict: 'idfotografo,fecha' })
+
+          if (agendaInsertError) throw agendaInsertError
         }
 
         if (estadoId) {
@@ -509,7 +549,7 @@ export default function AdminReservations() {
         )
       )
       setSelection(prev => ({ ...prev, [editingReserva.id]: estadoId ? String(estadoId) : '' }))
-      setToast({ type: 'success', message: '✅ Reserva actualizada correctamente.' })
+      setToast({ type: 'success', message: successMessage })
       closeEditReserva()
     } catch (error) {
       console.error('No se pudo actualizar la reserva', error)
@@ -533,6 +573,7 @@ export default function AdminReservations() {
             className="reserva-checkbox"
             checked={selectedReservas.includes(reserva.id)}
             onChange={() => toggleReservaSelection(reserva.id)}
+            aria-label={`Seleccionar reserva #${reserva.id}`}
           />
         )
       },
@@ -599,6 +640,7 @@ export default function AdminReservations() {
             type="button"
             className="reservation-edit-button"
             onClick={() => openEditReserva(reserva)}
+            aria-label={`Editar reserva #${reserva.id}`}
           >
             ✏️ Editar reserva
           </button>
@@ -644,18 +686,26 @@ export default function AdminReservations() {
         }
       }
     ],
-    [estados, selection, selectedReservas, toggleReservaSelection, updatingId]
+    [actualizarEstado, estados, selection, selectedReservas, toggleReservaSelection, updatingId]
   )
 
   const onFilterChange = (field, value) => {
     setFilters(prev => ({ ...prev, [field]: value }))
   }
 
+  const handleClearFechaFilter = () => {
+    setFilters(prev => ({ ...prev, fecha: null }))
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('admin-agenda-selected-day')
+    }
+    setToast({ type: 'success', message: 'Filtro de fecha eliminado' })
+  }
+
   const onSelectEstado = (reservaId, value) => {
     setSelection(prev => ({ ...prev, [reservaId]: value }))
   }
 
-  const actualizarEstado = async reserva => {
+  async function actualizarEstado(reserva) {
     const nuevoEstadoId = Number(selection[reserva.id])
     if (!nuevoEstadoId || nuevoEstadoId === reserva.estadoId) return
 
@@ -773,12 +823,25 @@ export default function AdminReservations() {
             </select>
           </label>
 
-          <AdminDatePicker
-            label="Filtrar por fecha"
-            value={filters.fecha}
-            onChange={date => onFilterChange('fecha', date ?? null)}
-            placeholder="Selecciona un día"
-          />
+          <div className="grid gap-2">
+            <AdminDatePicker
+              label="Filtrar por fecha"
+              value={filters.fecha}
+              onChange={date => onFilterChange('fecha', date ?? null)}
+              placeholder="Selecciona un día"
+            />
+            {filters.fecha && (
+              <button
+                type="button"
+                className="agenda-clear max-w-fit"
+                onClick={handleClearFechaFilter}
+                aria-label="Quitar filtro de fecha"
+              >
+                <span aria-hidden="true">✕</span>
+                <span className="ml-1 text-sm font-semibold text-umber">Quitar filtro</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {feedback.message && (
@@ -817,6 +880,7 @@ export default function AdminReservations() {
                   onChange={toggleSelectAllVisible}
                   checked={allVisibleSelected}
                   disabled={!visibleReservaIds.length}
+                  aria-label="Seleccionar todas las reservas visibles"
                 />
                 Seleccionar todo
               </label>
@@ -868,12 +932,11 @@ export default function AdminReservations() {
           aria-labelledby="bulk-action-title"
           onClick={event => {
             if (event.target === event.currentTarget) {
-              setBulkActionOpen(false)
-              setBulkEstadoNombre('')
+              closeBulkModal()
             }
           }}
         >
-          <div className="admin-modal__content">
+          <div ref={bulkModalRef} className="admin-modal__content" tabIndex={-1}>
             <h3 id="bulk-action-title" className="text-lg font-semibold text-umber">
               Actualizar estado masivo
             </h3>
@@ -900,10 +963,7 @@ export default function AdminReservations() {
               <button
                 type="button"
                 className="btn btn-ghost"
-                onClick={() => {
-                  setBulkActionOpen(false)
-                  setBulkEstadoNombre('')
-                }}
+                onClick={closeBulkModal}
                 disabled={bulkLoading}
               >
                 Cancelar
@@ -931,7 +991,7 @@ export default function AdminReservations() {
             if (event.target === event.currentTarget) closeEditReserva()
           }}
         >
-          <div className="admin-modal__content max-w-xl space-y-4">
+          <div ref={editModalRef} className="admin-modal__content max-w-xl space-y-4" tabIndex={-1}>
             <header className="space-y-1">
               <h3 id="editar-reserva-titulo" className="text-lg font-semibold text-umber">
                 Editar reserva #{editingReserva.id}
