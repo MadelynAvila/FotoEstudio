@@ -22,9 +22,43 @@ export default function Packages(){
   const [paquetes, setPaquetes] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [imagenSeleccionada, setImagenSeleccionada] = useState(null)
+  const [showGalleryModal, setShowGalleryModal] = useState(false)
+  const [selectedPackageId, setSelectedPackageId] = useState(null)
+  const [galleryImages, setGalleryImages] = useState([])
+  const [galleryLoading, setGalleryLoading] = useState(false)
+  const [galleryError, setGalleryError] = useState(null)
   const [searchParams] = useSearchParams()
   const evento = searchParams.get('evento')
+
+  const handleOpenGallery = async paqueteId => {
+    setSelectedPackageId(paqueteId)
+    setShowGalleryModal(true)
+    setGalleryLoading(true)
+    setGalleryError(null)
+
+    const { data, error: galleryFetchError } = await supabase
+      .from('galeria_paquete')
+      .select('id, url_imagen, descripcion')
+      .eq('id_paquete', paqueteId)
+      .order('id', { ascending: true })
+
+    if (galleryFetchError) {
+      console.error('Error cargando galería:', galleryFetchError)
+      setGalleryError('No se pudo cargar la galería de este paquete.')
+      setGalleryImages([])
+    } else {
+      setGalleryImages(data || [])
+    }
+
+    setGalleryLoading(false)
+  }
+
+  const handleCloseGallery = () => {
+    setShowGalleryModal(false)
+    setSelectedPackageId(null)
+    setGalleryImages([])
+    setGalleryError(null)
+  }
 
   useEffect(() => {
     let active = true
@@ -84,19 +118,16 @@ export default function Packages(){
                 .split('\n')
                 .map(item => item.trim())
                 .filter(Boolean)
-              const primeraImagen = paquete.galeria_paquete?.[0]?.url_imagen
               return (
                 <article key={paquete.id} className="card relative h-full flex flex-col">
-                  {primeraImagen && (
-                    <button
-                      type="button"
-                      onClick={() => setImagenSeleccionada(primeraImagen)}
-                      className="absolute right-4 top-4 text-slate-400 transition hover:text-umber"
-                      aria-label="Ver vista previa del paquete"
-                    >
-                      <EyeIcon className="h-5 w-5" aria-hidden="true" />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleOpenGallery(paquete.id)}
+                    className="absolute right-4 top-4 inline-flex items-center justify-center rounded-full p-2 text-slate-400 transition hover:bg-black/5 hover:text-umber focus:outline-none focus:ring-2 focus:ring-umber"
+                    aria-label={`Ver galería de ${paquete.nombre_paquete}`}
+                  >
+                    <EyeIcon className="h-5 w-5" aria-hidden="true" />
+                  </button>
                   <div className="card-body flex flex-col gap-4 flex-1">
                     <header className="space-y-1">
                       <p className="text-xs uppercase tracking-[0.3em] text-slate-500">{paquete.tipo_evento?.nombre_evento || 'Evento especial'}</p>
@@ -153,26 +184,56 @@ export default function Packages(){
           </div>
         )}
       </div>
-      {imagenSeleccionada && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-          <div
-            className="relative max-w-md rounded-2xl bg-white p-4 shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Vista previa del paquete"
-          >
-            <img
-              src={imagenSeleccionada}
-              alt="Vista previa del paquete"
-              className="max-h-[70vh] w-full rounded-xl object-contain"
-            />
+      {showGalleryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-3xl rounded-2xl bg-[#FAF8F4] p-6 shadow-xl relative">
             <button
               type="button"
-              onClick={() => setImagenSeleccionada(null)}
-              className="mt-4 w-full rounded-full bg-umber px-4 py-2 text-sm font-semibold text-white transition hover:bg-umber/90"
+              onClick={handleCloseGallery}
+              className="absolute right-4 top-4 rounded-full px-3 py-1 text-sm font-medium text-[#3B302A] hover:bg-black/5"
             >
               Cerrar
             </button>
+
+            <h2 className="mb-4 text-xl font-semibold text-[#3B302A]">
+              Galería del paquete
+              {selectedPackageId && (
+                <span className="ml-2 text-sm font-normal text-[#3B302A]/70">#{selectedPackageId}</span>
+              )}
+            </h2>
+
+            {galleryLoading && (
+              <p className="text-sm text-[#3B302A]/70">Cargando fotografías...</p>
+            )}
+
+            {galleryError && (
+              <p className="text-sm text-red-600">{galleryError}</p>
+            )}
+
+            {!galleryLoading && !galleryError && galleryImages.length === 0 && (
+              <p className="text-sm text-[#3B302A]/70">
+                Aún no hay fotografías registradas para este paquete.
+              </p>
+            )}
+
+            {!galleryLoading && !galleryError && galleryImages.length > 0 && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+                {galleryImages.map(img => (
+                  <figure key={img.id} className="overflow-hidden rounded-xl bg-white shadow-sm">
+                    <img
+                      src={img.url_imagen}
+                      alt={img.descripcion || 'Fotografía del paquete'}
+                      className="h-40 w-full object-cover"
+                    />
+                    {img.descripcion && (
+                      <figcaption className="p-2 text-xs text-[#3B302A]/70">
+                        {img.descripcion}
+                      </figcaption>
+                    )}
+                  </figure>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
