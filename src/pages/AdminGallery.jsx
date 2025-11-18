@@ -1,13 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import AdminHelpCard from '../components/AdminHelpCard'
+import AdminPaqueteGaleria from '../components/AdminPaqueteGaleria'
 import useFocusTrap from '../lib/useFocusTrap'
-
-const defaultForm = {
-  url: '',
-  descripcion: '',
-  paqueteId: ''
-}
 
 const defaultEditForm = {
   id: null,
@@ -18,10 +13,8 @@ const defaultEditForm = {
 
 export default function AdminGallery(){
   const [paquetes, setPaquetes] = useState([])
-  const [form, setForm] = useState(defaultForm)
   const [loading, setLoading] = useState(true)
-  const [savingPhoto, setSavingPhoto] = useState(false)
-  const [feedback, setFeedback] = useState({ type: '', message: '' })
+  const [selectedPaqueteId, setSelectedPaqueteId] = useState('')
   const [toast, setToast] = useState(null)
   const [editingPhoto, setEditingPhoto] = useState(null)
   const [editForm, setEditForm] = useState(defaultEditForm)
@@ -32,7 +25,6 @@ export default function AdminGallery(){
 
   const fetchData = async () => {
     setLoading(true)
-    setFeedback({ type: '', message: '' })
 
     const { data, error } = await supabase
       .from('paquete')
@@ -41,7 +33,7 @@ export default function AdminGallery(){
 
     if (error) {
       console.error('No se pudo cargar la galería', error)
-      setFeedback({ type: 'error', message: 'No pudimos cargar la información de la galería.' })
+      setToast({ type: 'error', message: 'No pudimos cargar la información de la galería.' })
       setPaquetes([])
       setLoading(false)
       return
@@ -49,55 +41,13 @@ export default function AdminGallery(){
 
     const dataPaquetes = data ?? []
     setPaquetes(dataPaquetes)
-    setForm(prev => ({
-      ...prev,
-      paqueteId: prev.paqueteId || (dataPaquetes[0] ? String(dataPaquetes[0].id) : '')
-    }))
+    setSelectedPaqueteId(prev => prev || (dataPaquetes[0] ? String(dataPaquetes[0].id) : ''))
     setLoading(false)
   }
 
   useEffect(() => {
     fetchData()
   }, [])
-
-  const updateField = (field, value) => {
-    setForm(prev => ({ ...prev, [field]: value }))
-  }
-
-  const onSubmit = async (event) => {
-    event.preventDefault()
-    setFeedback({ type: '', message: '' })
-
-    if (!form.url) {
-      setFeedback({ type: 'error', message: 'Agrega la URL pública de la imagen.' })
-      return
-    }
-    if (!form.paqueteId) {
-      setFeedback({ type: 'error', message: 'Selecciona un paquete para asociar la fotografía.' })
-      return
-    }
-
-    setSavingPhoto(true)
-    const { error } = await supabase.from('galeria_paquete').insert([
-      {
-        id_paquete: Number(form.paqueteId),
-        url_imagen: form.url,
-        descripcion: form.descripcion || null
-      }
-    ])
-
-    if (error) {
-      console.error('No se pudo guardar la fotografía', error)
-      setFeedback({ type: 'error', message: 'No se pudo guardar la fotografía. Verifica la información e intenta nuevamente.' })
-      setSavingPhoto(false)
-      return
-    }
-
-    setFeedback({ type: 'success', message: 'Fotografía agregada correctamente.' })
-    setForm(prev => ({ ...prev, url: '', descripcion: '' }))
-    setSavingPhoto(false)
-    fetchData()
-  }
 
   const closeToast = () => setToast(null)
 
@@ -241,6 +191,11 @@ export default function AdminGallery(){
   useFocusTrap(editModalRef, Boolean(editingPhoto), closeEditModal)
   useFocusTrap(deleteModalRef, Boolean(deleteTarget), closeDeleteModal)
 
+  const selectedPaquete = useMemo(() => {
+    if (!selectedPaqueteId) return null
+    return paquetes.find(paquete => String(paquete.id) === String(selectedPaqueteId)) || null
+  }, [paquetes, selectedPaqueteId])
+
   const handleDeleteConfirmed = async () => {
     if (!deleteTarget) return
     const targetId = deleteTarget.id
@@ -291,51 +246,30 @@ export default function AdminGallery(){
               <p className="muted text-sm">Organiza las imágenes asociadas a tus paquetes.</p>
             </div>
           </header>
+          <label className="grid gap-1 text-sm">
+            <span className="font-medium text-slate-700">Selecciona un paquete</span>
+            <select
+              value={selectedPaqueteId}
+              onChange={event => setSelectedPaqueteId(event.target.value)}
+              className="border rounded-xl2 px-3 py-2"
+            >
+              <option value="">Paquete</option>
+              {paquetes.map(paquete => (
+                <option key={paquete.id} value={paquete.id}>
+                  {paquete.nombre_paquete}
+                </option>
+              ))}
+            </select>
+          </label>
 
-          <form onSubmit={onSubmit} className="grid gap-3 md:grid-cols-2">
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium text-slate-700">Selecciona un paquete</span>
-              <select
-                value={form.paqueteId}
-                onChange={event => updateField('paqueteId', event.target.value)}
-                className="border rounded-xl2 px-3 py-2"
-              >
-                <option value="">Paquete</option>
-                {paquetes.map(paquete => (
-                  <option key={paquete.id} value={paquete.id}>
-                    {paquete.nombre_paquete}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="grid gap-1 text-sm md:col-span-2">
-              <span className="font-medium text-slate-700">URL de la fotografía</span>
-              <input
-                value={form.url}
-                onChange={event => updateField('url', event.target.value)}
-                className="border rounded-xl2 px-3 py-2"
-                placeholder="https://"
-              />
-            </label>
-            <label className="grid gap-1 text-sm md:col-span-2">
-              <span className="font-medium text-slate-700">Descripción</span>
-              <textarea
-                value={form.descripcion}
-                onChange={event => updateField('descripcion', event.target.value)}
-                className="border rounded-xl2 px-3 py-2 min-h-[100px]"
-                placeholder="Ej. Sesión en exterior"
-              />
-            </label>
-            <div className="md:col-span-2">
-              <button className="btn btn-primary" disabled={savingPhoto}>
-                {savingPhoto ? 'Guardando…' : 'Agregar fotografía'}
-              </button>
-            </div>
-          </form>
-          {feedback.message && (
-            <p className={`text-sm ${feedback.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
-              {feedback.message}
-            </p>
+          {selectedPaqueteId ? (
+            <AdminPaqueteGaleria
+              idPaquete={Number(selectedPaqueteId)}
+              nombrePaquete={selectedPaquete?.nombre_paquete}
+              onGalleryUpdated={fetchData}
+            />
+          ) : (
+            <p className="muted text-sm">Selecciona un paquete para administrar su galería.</p>
           )}
         </div>
 
