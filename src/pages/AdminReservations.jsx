@@ -109,15 +109,25 @@ export default function AdminReservations() {
 
   const safeReservas = useMemo(() => (Array.isArray(reservas) ? reservas : []), [reservas])
   const safeEstados = useMemo(() => (Array.isArray(estados) ? estados : []), [estados])
-  const safeVisibleReservas = useMemo(() => (Array.isArray(visibleReservas) ? visibleReservas : []), [visibleReservas])
+  const safeVisibleReservas = useMemo(
+    () => (Array.isArray(visibleReservas) ? visibleReservas : []),
+    [visibleReservas]
+  )
   const currentFechaFilter = filters?.fecha ?? null
 
-  const paymentStateIds = useMemo(() => ({
-    pendiente: getPaymentStateClasses(1, DEFAULT_PAYMENT_STATES).id ?? 1,
-    anticipo: getPaymentStateClasses(2, DEFAULT_PAYMENT_STATES).id ?? 2,
-    pagado: getPaymentStateClasses(3, DEFAULT_PAYMENT_STATES).id ?? 3
-  }), [])
-  const anticipoInfo = useMemo(() => getPaymentStateClasses(paymentStateIds.anticipo, DEFAULT_PAYMENT_STATES), [paymentStateIds])
+  const paymentStateIds = useMemo(
+    () => ({
+      pendiente: getPaymentStateClasses(1, DEFAULT_PAYMENT_STATES).id ?? 1,
+      anticipo: getPaymentStateClasses(2, DEFAULT_PAYMENT_STATES).id ?? 2,
+      pagado: getPaymentStateClasses(3, DEFAULT_PAYMENT_STATES).id ?? 3
+    }),
+    []
+  )
+
+  const anticipoInfo = useMemo(
+    () => getPaymentStateClasses(paymentStateIds.anticipo, DEFAULT_PAYMENT_STATES),
+    [paymentStateIds]
+  )
 
   const reservadaEstadoId = useMemo(() => {
     const estado = safeEstados.find(item => normalize(item?.nombre_estado) === 'reservada')
@@ -132,7 +142,9 @@ export default function AdminReservations() {
       const [actividadesRes, estadosRes] = await Promise.all([
         supabase
           .from('actividad')
-          .select('id, idusuario, idagenda, idpaquete, idestado_actividad, idestado_pago, estado_pago:estado_pago ( id, nombre_estado )')
+          .select(
+            'id, idusuario, idagenda, idpaquete, idestado_actividad, idestado_pago, estado_pago:estado_pago ( id, nombre_estado )'
+          )
           .order('id', { ascending: false }),
         supabase
           .from('estado_actividad')
@@ -147,20 +159,33 @@ export default function AdminReservations() {
         setEstados([])
         setSelection({})
         setSelectedReservas([])
-        setFeedback({ type: 'error', message: 'No se pudieron cargar las reservas. Intenta nuevamente.' })
+        setFeedback({
+          type: 'error',
+          message: 'No se pudieron cargar las reservas. Intenta nuevamente.'
+        })
         return
       }
 
       const actividades = actividadesRes.data ?? []
       const estadosData = estadosRes.data ?? []
 
-      const agendaIds = Array.from(new Set(actividades.map(item => item.idagenda).filter(Boolean)))
-      const paqueteIds = Array.from(new Set(actividades.map(item => item.idpaquete).filter(Boolean)))
+      const agendaIds = Array.from(
+        new Set(actividades.map(item => item.idagenda).filter(Boolean))
+      )
+      const paqueteIds = Array.from(
+        new Set(actividades.map(item => item.idpaquete).filter(Boolean))
+      )
       const clienteIds = actividades.map(item => item.idusuario).filter(Boolean)
 
-      const [{ data: agendasData = [], error: agendaError }, { data: paquetesData = [], error: paquetesError }] = await Promise.all([
+      const [
+        { data: agendasData = [], error: agendaError },
+        { data: paquetesData = [], error: paquetesError }
+      ] = await Promise.all([
         agendaIds.length
-          ? supabase.from('agenda').select('id, fecha, horainicio, horafin, idfotografo').in('id', agendaIds)
+          ? supabase
+              .from('agenda')
+              .select('id, fecha, horainicio, horafin, idfotografo')
+              .in('id', agendaIds)
           : Promise.resolve({ data: [], error: null }),
         paqueteIds.length
           ? supabase.from('paquete').select('id, nombre_paquete').in('id', paqueteIds)
@@ -168,13 +193,21 @@ export default function AdminReservations() {
       ])
 
       const errorsSecundarios = [agendaError, paquetesError].filter(Boolean)
-      if (errorsSecundarios.length) errorsSecundarios.forEach(err => console.error('Error cargando datos relacionados', err))
+      if (errorsSecundarios.length)
+        errorsSecundarios.forEach(err =>
+          console.error('Error cargando datos relacionados', err)
+        )
 
-      const fotografoIds = Array.from(new Set((agendasData ?? []).map(a => a.idfotografo).filter(Boolean)))
+      const fotografoIds = Array.from(
+        new Set((agendasData ?? []).map(a => a.idfotografo).filter(Boolean))
+      )
       const usuarioIds = Array.from(new Set([...clienteIds, ...fotografoIds]))
 
       const { data: usuariosData = [], error: usuariosError } = usuarioIds.length
-        ? await supabase.from('usuario').select('id, username').in('id', usuarioIds)
+        ? await supabase
+            .from('usuario')
+            .select('id, username')
+            .in('id', usuarioIds)
         : { data: [], error: null }
 
       if (usuariosError) console.error('Error cargando usuarios relacionados', usuariosError)
@@ -218,7 +251,10 @@ export default function AdminReservations() {
       setReservas(formattedReservas)
       setSelection(
         Object.fromEntries(
-          formattedReservas.map(reserva => [reserva.id, reserva.estadoId ? String(reserva.estadoId) : ''])
+          formattedReservas.map(reserva => [
+            reserva.id,
+            reserva.estadoId ? String(reserva.estadoId) : ''
+          ])
         )
       )
       setSelectedReservas([])
@@ -228,7 +264,10 @@ export default function AdminReservations() {
       setEstados([])
       setSelection({})
       setSelectedReservas([])
-      setFeedback({ type: 'error', message: 'Ocurrió un error inesperado cargando las reservas.' })
+      setFeedback({
+        type: 'error',
+        message: 'Ocurrió un error inesperado cargando las reservas.'
+      })
     } finally {
       setLoading(false)
     }
@@ -239,7 +278,9 @@ export default function AdminReservations() {
   }, [loadReservas])
 
   useEffect(() => {
-    setSelectedReservas(prev => prev.filter(id => safeReservas.some(reserva => reserva.id === id)))
+    setSelectedReservas(prev =>
+      prev.filter(id => safeReservas.some(reserva => reserva.id === id))
+    )
   }, [safeReservas])
 
   useEffect(() => {
@@ -253,7 +294,10 @@ export default function AdminReservations() {
     if (agendaDia) {
       const parsed = toDate(agendaDia)
       if (parsed) {
-        setFilters(prev => ({ ...(typeof prev === 'object' && prev !== null ? prev : defaultFilters), fecha: parsed }))
+        setFilters(prev => ({
+          ...(typeof prev === 'object' && prev !== null ? prev : defaultFilters),
+          fecha: parsed
+        }))
         if (typeof window !== 'undefined') {
           window.localStorage.setItem('admin-agenda-selected-day', agendaDia)
         }
@@ -269,7 +313,10 @@ export default function AdminReservations() {
       if (stored) {
         const parsedStored = toDate(stored)
         if (parsedStored) {
-          setFilters(prev => ({ ...(typeof prev === 'object' && prev !== null ? prev : defaultFilters), fecha: parsedStored }))
+          setFilters(prev => ({
+            ...(typeof prev === 'object' && prev !== null ? prev : defaultFilters),
+            fecha: parsedStored
+          }))
         }
       }
     }
@@ -506,18 +553,25 @@ export default function AdminReservations() {
 
         const result = await response.json().catch(() => null)
         if (!response.ok || !result?.success) {
-          throw new Error(result?.message || 'No se pudo actualizar la reserva desde el servicio.')
+          throw new Error(
+            result?.message || 'No se pudo actualizar la reserva desde el servicio.'
+          )
         }
 
         if (result?.message) {
           successMessage = result.message
         }
       } catch (apiError) {
-        console.warn('Fallo la ruta /api/reservas/:id, usando Supabase como respaldo', apiError)
+        console.warn(
+          'Fallo la ruta /api/reservas/:id, usando Supabase como respaldo',
+          apiError
+        )
         const agendaUpdate = {
           fecha,
           horainicio: hora,
-          horafin: editingReserva.horaFin ? String(editingReserva.horaFin).slice(0, 5) : hora,
+          horafin: editingReserva.horaFin
+            ? String(editingReserva.horaFin).slice(0, 5)
+            : hora,
           idfotografo: idfotografo
         }
 
@@ -531,13 +585,16 @@ export default function AdminReservations() {
         } else if (idfotografo) {
           const { error: agendaInsertError } = await supabase
             .from('agenda')
-            .upsert({
-              idfotografo,
-              fecha,
-              horainicio: hora,
-              horafin: hora,
-              disponible: false
-            }, { onConflict: 'idfotografo,fecha' })
+            .upsert(
+              {
+                idfotografo,
+                fecha,
+                horainicio: hora,
+                horafin: hora,
+                disponible: false
+              },
+              { onConflict: 'idfotografo,fecha' }
+            )
 
           if (agendaInsertError) throw agendaInsertError
         }
@@ -553,7 +610,10 @@ export default function AdminReservations() {
       }
 
       const fotografoNombre = idfotografo
-        ? (fotografoOptions.find(option => Number(option.id) === Number(idfotografo))?.nombre || 'Fotógrafo asignado')
+        ? (
+            fotografoOptions.find(option => Number(option.id) === Number(idfotografo))
+              ?.nombre || 'Fotógrafo asignado'
+          )
         : 'Por asignar'
       const estadoNombre = estadoSeleccionado || editingReserva.estadoNombre
 
@@ -577,11 +637,107 @@ export default function AdminReservations() {
       closeEditReserva()
     } catch (error) {
       console.error('No se pudo actualizar la reserva', error)
-      setToast({ type: 'error', message: 'No se pudo actualizar la reserva seleccionada.' })
+      setToast({
+        type: 'error',
+        message: 'No se pudo actualizar la reserva seleccionada.'
+      })
     } finally {
       setSavingEdit(false)
     }
   }
+
+  // ---- IMPORTANTE: estas funciones van ANTES de reservasColumns ----
+
+  const onFilterChange = (field, value) => {
+    setFilters(prev => ({
+      ...(typeof prev === 'object' && prev !== null ? prev : defaultFilters),
+      [field]: value
+    }))
+  }
+
+  const handleClearFechaFilter = () => {
+    setFilters(prev => ({
+      ...(typeof prev === 'object' && prev !== null ? prev : defaultFilters),
+      fecha: null
+    }))
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('admin-agenda-selected-day')
+    }
+    setToast({ type: 'success', message: 'Filtro de fecha eliminado' })
+  }
+
+  const onSelectEstado = (reservaId, value) => {
+    setSelection(prev => ({ ...prev, [reservaId]: value }))
+  }
+
+  const actualizarEstado = useCallback(
+    async reserva => {
+      const nuevoEstadoId = Number(selection[reserva.id])
+      if (!nuevoEstadoId || nuevoEstadoId === reserva.estadoId) return
+
+      const estadoActual = normalize(reserva.estadoNombre)
+      if (estadoActual === 'entregada') {
+        setFeedback({
+          type: 'warning',
+          message: 'Las reservas entregadas no pueden modificarse.'
+        })
+        return
+      }
+
+      setUpdatingId(reserva.id)
+      setFeedback({ type: '', message: '' })
+
+      const payload = { idestado_actividad: nuevoEstadoId }
+      if (reservadaEstadoId && nuevoEstadoId === Number(reservadaEstadoId)) {
+        payload.idestado_pago = paymentStateIds.anticipo
+      }
+
+      const { error } = await supabase.from('actividad').update(payload).eq('id', reserva.id)
+
+      if (error) {
+        console.error('Error actualizando estado', error)
+        setFeedback({
+          type: 'error',
+          message: 'No se pudo actualizar el estado. Intenta de nuevo.'
+        })
+      } else {
+        const estadoActualizado = safeEstados.find(item => Number(item.id) === nuevoEstadoId)
+        setSelection(prev => ({ ...prev, [reserva.id]: String(nuevoEstadoId) }))
+        setReservas(prev =>
+          prev.map(item =>
+            item.id === reserva.id
+              ? {
+                  ...item,
+                  estadoId: nuevoEstadoId,
+                  estadoNombre: estadoActualizado?.nombre_estado || item.estadoNombre,
+                  estadoPago:
+                    reservadaEstadoId && nuevoEstadoId === Number(reservadaEstadoId)
+                      ? anticipoInfo.label
+                      : item.estadoPago,
+                  estadoPagoId:
+                    reservadaEstadoId && nuevoEstadoId === Number(reservadaEstadoId)
+                      ? anticipoInfo.id ?? paymentStateIds.anticipo
+                      : item.estadoPagoId
+                }
+              : item
+          )
+        )
+        setFeedback({ type: 'success', message: 'Estado actualizado correctamente.' })
+      }
+
+      setUpdatingId(null)
+    },
+    [
+      anticipoInfo.id,
+      anticipoInfo.label,
+      paymentStateIds.anticipo,
+      reservadaEstadoId,
+      safeEstados,
+      selection
+    ]
+  )
+
+  // -----------------------------------------------------------------
 
   const reservasColumns = useMemo(
     () => [
@@ -604,7 +760,7 @@ export default function AdminReservations() {
       {
         id: 'reserva',
         label: 'Reserva',
-        render: (reserva) => {
+        render: reserva => {
           const isChecked = selectedReservas.includes(reserva.id)
           return (
             <div className="flex items-start gap-3">
@@ -627,14 +783,17 @@ export default function AdminReservations() {
       {
         id: 'programacion',
         label: 'Programación',
-        render: (reserva) => {
-          const fotografoNombre = reserva.fotografo && reserva.fotografo !== 'Sin asignar'
-            ? reserva.fotografo
-            : 'Por asignar'
+        render: reserva => {
+          const fotografoNombre =
+            reserva.fotografo && reserva.fotografo !== 'Sin asignar'
+              ? reserva.fotografo
+              : 'Por asignar'
           return (
             <div className="space-y-1 text-sm text-slate-600">
               <p className="font-semibold text-umber">{formatDate(reserva.fecha)}</p>
-              <p className="text-xs text-slate-500">{formatTimeRange(reserva.horaInicio, reserva.horaFin)}</p>
+              <p className="text-xs text-slate-500">
+                {formatTimeRange(reserva.horaInicio, reserva.horaFin)}
+              </p>
               <p className="text-xs text-slate-500">Fotógrafo: {fotografoNombre}</p>
             </div>
           )
@@ -644,7 +803,7 @@ export default function AdminReservations() {
         id: 'estado',
         label: 'Estado actual',
         hideOnMobile: true,
-        render: (reserva) => {
+        render: reserva => {
           const estadoStyles = getEstadoStyles(reserva.estadoNombre)
           return (
             <span
@@ -659,7 +818,7 @@ export default function AdminReservations() {
       {
         id: 'editar',
         label: 'Editar',
-        render: (reserva) => (
+        render: reserva => (
           <button
             type="button"
             className="reservation-edit-button"
@@ -673,13 +832,15 @@ export default function AdminReservations() {
       {
         id: 'acciones',
         label: 'Actualizar estado',
-        render: (reserva) => {
+        render: reserva => {
           const estadoActual = normalize(reserva.estadoNombre)
           const entregada = estadoActual === 'entregada'
           const selectedValue = selection[reserva.id] ?? ''
           const hasSelection = selectedValue !== ''
           const sameEstado =
-            hasSelection && reserva.estadoId != null && Number(selectedValue) === Number(reserva.estadoId)
+            hasSelection &&
+            reserva.estadoId != null &&
+            Number(selectedValue) === Number(reserva.estadoId)
           const disableAction = entregada || updatingId === reserva.id
 
           return (
@@ -710,92 +871,26 @@ export default function AdminReservations() {
         }
       }
     ],
-    [actualizarEstado, safeEstados, selection, selectedReservas, toggleReservaSelection, updatingId]
+    [
+      actualizarEstado,
+      safeEstados,
+      selection,
+      selectedReservas,
+      toggleReservaSelection,
+      updatingId
+    ]
   )
-
-  const onFilterChange = (field, value) => {
-    setFilters(prev => ({ ...(typeof prev === 'object' && prev !== null ? prev : defaultFilters), [field]: value }))
-  }
-
-  const handleClearFechaFilter = () => {
-    setFilters(prev => ({ ...(typeof prev === 'object' && prev !== null ? prev : defaultFilters), fecha: null }))
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem('admin-agenda-selected-day')
-    }
-    setToast({ type: 'success', message: 'Filtro de fecha eliminado' })
-  }
-
-  const onSelectEstado = (reservaId, value) => {
-    setSelection(prev => ({ ...prev, [reservaId]: value }))
-  }
-
-  const actualizarEstado = useCallback(async (reserva) => {
-    const nuevoEstadoId = Number(selection[reserva.id])
-    if (!nuevoEstadoId || nuevoEstadoId === reserva.estadoId) return
-
-    const estadoActual = normalize(reserva.estadoNombre)
-    if (estadoActual === 'entregada') {
-      setFeedback({ type: 'warning', message: 'Las reservas entregadas no pueden modificarse.' })
-      return
-    }
-
-    setUpdatingId(reserva.id)
-    setFeedback({ type: '', message: '' })
-
-    const payload = { idestado_actividad: nuevoEstadoId }
-    if (reservadaEstadoId && nuevoEstadoId === Number(reservadaEstadoId)) {
-      payload.idestado_pago = paymentStateIds.anticipo
-    }
-
-    const { error } = await supabase.from('actividad').update(payload).eq('id', reserva.id)
-
-    if (error) {
-      console.error('Error actualizando estado', error)
-      setFeedback({ type: 'error', message: 'No se pudo actualizar el estado. Intenta de nuevo.' })
-    } else {
-      const estadoActualizado = safeEstados.find(item => Number(item.id) === nuevoEstadoId)
-      setSelection(prev => ({ ...prev, [reserva.id]: String(nuevoEstadoId) }))
-      setReservas(prev =>
-        prev.map(item =>
-          item.id === reserva.id
-            ? {
-                ...item,
-                estadoId: nuevoEstadoId,
-                estadoNombre: estadoActualizado?.nombre_estado || item.estadoNombre,
-                estadoPago:
-                  reservadaEstadoId && nuevoEstadoId === Number(reservadaEstadoId)
-                    ? anticipoInfo.label
-                    : item.estadoPago,
-                estadoPagoId:
-                  reservadaEstadoId && nuevoEstadoId === Number(reservadaEstadoId)
-                    ? anticipoInfo.id ?? paymentStateIds.anticipo
-                    : item.estadoPagoId
-              }
-            : item
-        )
-      )
-      setFeedback({ type: 'success', message: 'Estado actualizado correctamente.' })
-    }
-
-    setUpdatingId(null)
-  }, [
-    anticipoInfo.id,
-    anticipoInfo.label,
-    paymentStateIds.anticipo,
-    reservadaEstadoId,
-    safeEstados,
-    selection,
-    setFeedback,
-    setReservas,
-    setSelection
-  ])
 
   return (
     <div className="admin-page space-y-6">
       {toast && (
         <div className={`admin-toast admin-toast--${toast.type}`} role="status">
           <span>{toast.message}</span>
-          <button type="button" onClick={() => setToast(null)} aria-label="Cerrar notificación">
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            aria-label="Cerrar notificación"
+          >
             ×
           </button>
         </div>
@@ -805,10 +900,17 @@ export default function AdminReservations() {
         <header className="admin-header">
           <div>
             <h1 className="text-xl font-semibold text-umber">Gestión de reservas</h1>
-            <p className="muted text-sm">Administra el estado de cada actividad y mantén al equipo alineado.</p>
+            <p className="muted text-sm">
+              Administra el estado de cada actividad y mantén al equipo alineado.
+            </p>
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={loadReservas} className="btn btn-ghost" disabled={loading}>
+            <button
+              type="button"
+              onClick={loadReservas}
+              className="btn btn-ghost"
+              disabled={loading}
+            >
               {loading ? 'Actualizando…' : 'Actualizar datos'}
             </button>
           </div>
@@ -899,7 +1001,9 @@ export default function AdminReservations() {
             <h2 className="text-lg font-semibold text-umber">Reservas registradas</h2>
             <p className="muted text-sm">Visualiza y actualiza el estado de cada actividad.</p>
           </div>
-          <span className="text-xs uppercase tracking-[0.3em] text-slate-500">{filteredReservas.length} registros</span>
+          <span className="text-xs uppercase tracking-[0.3em] text-slate-500">
+            {filteredReservas.length} registros
+          </span>
         </div>
 
         {loading ? (
@@ -946,7 +1050,9 @@ export default function AdminReservations() {
             </div>
           </>
         ) : (
-          <p className="muted text-sm">No hay reservas que coincidan con los filtros seleccionados.</p>
+          <p className="muted text-sm">
+            No hay reservas que coincidan con los filtros seleccionados.
+          </p>
         )}
       </div>
 
@@ -954,7 +1060,9 @@ export default function AdminReservations() {
         <AdminHelpCard title="Consejos de seguimiento">
           <p>Aprovecha los filtros para coordinar rápidamente las actividades pendientes.</p>
           <p>Confirma las reservas recién aprobadas para notificar a tu cliente y equipo.</p>
-          <p>Una vez marcada como entregada, la reserva queda bloqueada para mantener el historial.</p>
+          <p>
+            Una vez marcada como entregada, la reserva queda bloqueada para mantener el historial.
+          </p>
         </AdminHelpCard>
       </div>
 
@@ -1030,7 +1138,9 @@ export default function AdminReservations() {
               <h3 id="editar-reserva-titulo" className="text-lg font-semibold text-umber">
                 Editar reserva #{editingReserva.id}
               </h3>
-              <p className="muted text-sm">Actualiza la fecha, hora, fotógrafo asignado o el estado actual.</p>
+              <p className="muted text-sm">
+                Actualiza la fecha, hora, fotógrafo asignado o el estado actual.
+              </p>
             </header>
 
             <form onSubmit={handleEditSubmit} className="grid gap-3 md:grid-cols-2">
@@ -1103,3 +1213,4 @@ export default function AdminReservations() {
     </div>
   )
 }
+
