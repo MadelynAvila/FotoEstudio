@@ -11,7 +11,6 @@ export default function AdminPaqueteGaleria({ idPaquete, nombrePaquete = '', onG
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [mode, setMode] = useState(uploadModes.FILES)
-  const [files, setFiles] = useState([])
   const [imageUrl, setImageUrl] = useState('')
   const [descripcion, setDescripcion] = useState('')
   const [feedback, setFeedback] = useState({ type: '', message: '' })
@@ -48,7 +47,6 @@ export default function AdminPaqueteGaleria({ idPaquete, nombrePaquete = '', onG
   }, [fetchGaleria, idPaquete])
 
   const resetForm = () => {
-    setFiles([])
     setImageUrl('')
     setDescripcion('')
     if (fileInputRef.current) {
@@ -56,9 +54,9 @@ export default function AdminPaqueteGaleria({ idPaquete, nombrePaquete = '', onG
     }
   }
 
-  const handleFilesChange = event => {
-    const fileList = Array.from(event.target.files || [])
-    setFiles(fileList)
+  const getSelectedFiles = () => {
+    const fileList = fileInputRef.current?.files
+    return fileList ? Array.from(fileList) : []
   }
 
   const handleSubmit = async event => {
@@ -71,11 +69,12 @@ export default function AdminPaqueteGaleria({ idPaquete, nombrePaquete = '', onG
     setFeedback({ type: '', message: '' })
 
     if (mode === uploadModes.FILES) {
-      if (!files.length) {
+      const selectedFiles = getSelectedFiles()
+      if (!selectedFiles.length) {
         setFeedback({ type: 'error', message: 'Selecciona al menos una imagen.' })
         return
       }
-      await handleFileUpload()
+      await handleFileUpload(selectedFiles)
       return
     }
 
@@ -88,16 +87,19 @@ export default function AdminPaqueteGaleria({ idPaquete, nombrePaquete = '', onG
     await handleUrlSubmit(trimmedUrl)
   }
 
-  const handleFileUpload = async () => {
+  const handleFileUpload = async selectedFiles => {
     setSubmitting(true)
     let successCount = 0
     let errorCount = 0
+    const safeDescription = descripcion.trim() ? descripcion.trim() : null
     try {
-      for (const file of files) {
-        const filePath = `paquetes/${idPaquete}/${Date.now()}-${file.name}`
+      for (const file of selectedFiles) {
+        const sanitizedName = file.name.replace(/\s+/g, '-').toLowerCase()
+        const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+        const filePath = `paquetes/${idPaquete}/${uniqueSuffix}-${sanitizedName}`
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from('galeria-paquetes')
-          .upload(filePath, file)
+          .upload(filePath, file, { cacheControl: '3600', upsert: false })
 
         if (uploadError) {
           console.error(uploadError)
@@ -121,7 +123,7 @@ export default function AdminPaqueteGaleria({ idPaquete, nombrePaquete = '', onG
         const { error: insertError } = await supabase.from('galeria_paquete').insert({
           id_paquete: idPaquete,
           url_imagen: publicUrl,
-          descripcion: descripcion.trim() ? descripcion.trim() : null
+          descripcion: safeDescription
         })
 
         if (insertError) {
@@ -227,7 +229,6 @@ export default function AdminPaqueteGaleria({ idPaquete, nombrePaquete = '', onG
               multiple
               accept="image/*"
               ref={fileInputRef}
-              onChange={handleFilesChange}
               className="w-full rounded-xl2 border px-3 py-2"
               disabled={!idPaquete || submitting}
             />
