@@ -6,6 +6,9 @@ const uploadModes = {
   URL: 'url'
 }
 
+// Nombre del bucket de Supabase Storage
+const BUCKET_NAME = 'galeria-paquetes'
+
 export default function AdminPaqueteGaleria({ idPaquete, nombrePaquete = '', onGalleryUpdated }) {
   const [imagenes, setImagenes] = useState([])
   const [loading, setLoading] = useState(false)
@@ -92,34 +95,56 @@ export default function AdminPaqueteGaleria({ idPaquete, nombrePaquete = '', onG
     let successCount = 0
     let errorCount = 0
     const safeDescription = descripcion.trim() ? descripcion.trim() : null
+
     try {
       for (const file of selectedFiles) {
-        const sanitizedName = file.name.replace(/\s+/g, '-').toLowerCase()
+        // 1) Normalizar nombre de archivo (sin acentos ni caracteres raros)
+        const safeFileName = file.name
+          .normalize('NFD')                      // separa acentos
+          .replace(/[\u0300-\u036f]/g, '')       // quita acentos (á -> a, etc.)
+          .replace(/\s+/g, '-')                  // espacios -> guiones
+          .replace(/[^a-zA-Z0-9.\-_]/g, '')      // solo letras, números, punto, guion y guion bajo
+          .toLowerCase()
+
+        // 2) Ruta única y válida dentro del bucket
         const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-        const filePath = `paquetes/${idPaquete}/${uniqueSuffix}-${sanitizedName}`
+        const filePath = `paquetes/${idPaquete}/${uniqueSuffix}-${safeFileName}`
+
+        // 3) Subir archivo a Supabase Storage
         const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('galeria-paquetes')
-          .upload(filePath, file, { cacheControl: '3600', upsert: false })
+          .from(BUCKET_NAME)
+          .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: false
+          })
 
         if (uploadError) {
           console.error(uploadError)
           errorCount += 1
-          setFeedback({ type: 'error', message: 'Ocurrió un error al subir una de las imágenes seleccionadas.' })
+          setFeedback({
+            type: 'error',
+            message: 'Ocurrió un error al subir una de las imágenes seleccionadas.'
+          })
           continue
         }
 
+        // 4) Obtener URL pública
         const { data: publicUrlData } = supabase.storage
-          .from('galeria-paquetes')
+          .from(BUCKET_NAME)
           .getPublicUrl(uploadData?.path ?? filePath)
 
         const publicUrl = publicUrlData?.publicUrl
         if (!publicUrl) {
           console.error('No pudimos obtener la URL pública del archivo subido.')
           errorCount += 1
-          setFeedback({ type: 'error', message: 'Ocurrió un error al subir una de las imágenes seleccionadas.' })
+          setFeedback({
+            type: 'error',
+            message: 'Ocurrió un error al subir una de las imágenes seleccionadas.'
+          })
           continue
         }
 
+        // 5) Guardar registro en galeria_paquete
         const { error: insertError } = await supabase.from('galeria_paquete').insert({
           id_paquete: idPaquete,
           url_imagen: publicUrl,
@@ -129,7 +154,10 @@ export default function AdminPaqueteGaleria({ idPaquete, nombrePaquete = '', onG
         if (insertError) {
           console.error(insertError)
           errorCount += 1
-          setFeedback({ type: 'error', message: 'Ocurrió un error al guardar una de las imágenes seleccionadas.' })
+          setFeedback({
+            type: 'error',
+            message: 'Ocurrió un error al guardar una de las imágenes seleccionadas.'
+          })
           continue
         }
 
@@ -279,7 +307,12 @@ export default function AdminPaqueteGaleria({ idPaquete, nombrePaquete = '', onG
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold text-umber">Galería registrada</h3>
-          <button type="button" className="text-sm text-umber underline-offset-2 hover:underline" onClick={fetchGaleria} disabled={loading}>
+          <button
+            type="button"
+            className="text-sm text-umber underline-offset-2 hover:underline"
+            onClick={fetchGaleria}
+            disabled={loading}
+          >
             {loading ? 'Actualizando…' : 'Actualizar'}
           </button>
         </div>
