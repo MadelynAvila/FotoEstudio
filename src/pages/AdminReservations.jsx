@@ -754,7 +754,17 @@ export default function AdminReservations() {
     }
 
     setUpdatingId(null)
-  }
+  }, [
+    anticipoInfo.id,
+    anticipoInfo.label,
+    estados,
+    paymentStateIds.anticipo,
+    reservadaEstadoId,
+    selection,
+    setFeedback,
+    setReservas,
+    setSelection
+  ])
 
   return (
     <div className="admin-page space-y-6">
