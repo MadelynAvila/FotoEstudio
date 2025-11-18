@@ -72,74 +72,97 @@ export default function AdminPaqueteGaleria({ idPaquete, nombrePaquete = '', onG
 
     if (mode === uploadModes.FILES) {
       if (!files.length) {
-        setFeedback({ type: 'error', message: 'Selecciona al menos una imagen para subir.' })
+        setFeedback({ type: 'error', message: 'Selecciona al menos una imagen.' })
         return
       }
       await handleFileUpload()
       return
     }
 
-    if (!imageUrl.trim()) {
+    const trimmedUrl = imageUrl.trim()
+    if (!trimmedUrl) {
       setFeedback({ type: 'error', message: 'Agrega la URL pública de la imagen.' })
       return
     }
 
-    await handleUrlSubmit()
+    await handleUrlSubmit(trimmedUrl)
   }
 
   const handleFileUpload = async () => {
     setSubmitting(true)
+    let successCount = 0
+    let errorCount = 0
     try {
       for (const file of files) {
-        const sanitizedName = file.name.replace(/\s+/g, '-').toLowerCase()
-        const filePath = `${idPaquete}/${Date.now()}-${sanitizedName}`
-        const { error: uploadError } = await supabase.storage
+        const filePath = `paquetes/${idPaquete}/${Date.now()}-${file.name}`
+        const { data: uploadData, error: uploadError } = await supabase.storage
           .from('galeria-paquetes')
           .upload(filePath, file)
 
         if (uploadError) {
-          throw uploadError
+          console.error(uploadError)
+          errorCount += 1
+          setFeedback({ type: 'error', message: 'Ocurrió un error al subir una de las imágenes seleccionadas.' })
+          continue
         }
 
         const { data: publicUrlData } = supabase.storage
           .from('galeria-paquetes')
-          .getPublicUrl(filePath)
+          .getPublicUrl(uploadData?.path ?? filePath)
 
         const publicUrl = publicUrlData?.publicUrl
         if (!publicUrl) {
-          throw new Error('No pudimos obtener la URL pública del archivo subido.')
+          console.error('No pudimos obtener la URL pública del archivo subido.')
+          errorCount += 1
+          setFeedback({ type: 'error', message: 'Ocurrió un error al subir una de las imágenes seleccionadas.' })
+          continue
         }
 
         const { error: insertError } = await supabase.from('galeria_paquete').insert({
           id_paquete: idPaquete,
           url_imagen: publicUrl,
-          descripcion: descripcion.trim() || null
+          descripcion: descripcion.trim() ? descripcion.trim() : null
         })
 
         if (insertError) {
-          throw insertError
+          console.error(insertError)
+          errorCount += 1
+          setFeedback({ type: 'error', message: 'Ocurrió un error al guardar una de las imágenes seleccionadas.' })
+          continue
         }
+
+        successCount += 1
       }
 
-      setFeedback({ type: 'success', message: 'Imágenes agregadas correctamente.' })
-      resetForm()
-      await fetchGaleria()
-      onGalleryUpdated?.()
+      if (successCount) {
+        const successMessage =
+          errorCount > 0
+            ? 'Se guardaron algunas imágenes; otras no pudieron subirse.'
+            : 'Imágenes agregadas correctamente.'
+        setFeedback({ type: 'success', message: successMessage })
+        resetForm()
+        await fetchGaleria()
+        onGalleryUpdated?.()
+      } else {
+        setFeedback({ type: 'error', message: 'No pudimos subir las imágenes seleccionadas.' })
+      }
     } catch (error) {
       console.error('No se pudieron subir las imágenes', error)
-      setFeedback({ type: 'error', message: 'No pudimos subir las imágenes seleccionadas.' })
+      if (!successCount) {
+        setFeedback({ type: 'error', message: 'No pudimos subir las imágenes seleccionadas.' })
+      }
     } finally {
       setSubmitting(false)
     }
   }
 
-  const handleUrlSubmit = async () => {
+  const handleUrlSubmit = async trimmedUrl => {
     setSubmitting(true)
     try {
       const { error } = await supabase.from('galeria_paquete').insert({
         id_paquete: idPaquete,
-        url_imagen: imageUrl.trim(),
-        descripcion: descripcion.trim() || null
+        url_imagen: trimmedUrl,
+        descripcion: descripcion.trim() ? descripcion.trim() : null
       })
 
       if (error) {
