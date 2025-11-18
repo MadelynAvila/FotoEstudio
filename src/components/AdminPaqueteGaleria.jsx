@@ -6,6 +6,8 @@ const uploadModes = {
   URL: 'url'
 }
 
+const BUCKET_NAME = 'galeria-paquetes'
+
 export default function AdminPaqueteGaleria({ idPaquete, nombrePaquete = '', onGalleryUpdated }) {
   const [imagenes, setImagenes] = useState([])
   const [loading, setLoading] = useState(false)
@@ -98,25 +100,31 @@ export default function AdminPaqueteGaleria({ idPaquete, nombrePaquete = '', onG
         const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
         const filePath = `paquetes/${idPaquete}/${uniqueSuffix}-${sanitizedName}`
         const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('galeria-paquetes')
+          .from(BUCKET_NAME)
           .upload(filePath, file, { cacheControl: '3600', upsert: false })
 
         if (uploadError) {
           console.error(uploadError)
           errorCount += 1
-          setFeedback({ type: 'error', message: 'Ocurrió un error al subir una de las imágenes seleccionadas.' })
+          setFeedback({
+            type: 'error',
+            message: `No se pudo subir la imagen ${file.name}: ${uploadError.message}`
+          })
           continue
         }
 
         const { data: publicUrlData } = supabase.storage
-          .from('galeria-paquetes')
+          .from(BUCKET_NAME)
           .getPublicUrl(uploadData?.path ?? filePath)
 
         const publicUrl = publicUrlData?.publicUrl
         if (!publicUrl) {
           console.error('No pudimos obtener la URL pública del archivo subido.')
           errorCount += 1
-          setFeedback({ type: 'error', message: 'Ocurrió un error al subir una de las imágenes seleccionadas.' })
+          setFeedback({
+            type: 'error',
+            message: `No pudimos obtener la URL pública de ${file.name}.`
+          })
           continue
         }
 
@@ -129,7 +137,10 @@ export default function AdminPaqueteGaleria({ idPaquete, nombrePaquete = '', onG
         if (insertError) {
           console.error(insertError)
           errorCount += 1
-          setFeedback({ type: 'error', message: 'Ocurrió un error al guardar una de las imágenes seleccionadas.' })
+          setFeedback({
+            type: 'error',
+            message: `No se pudo guardar la imagen ${file.name}: ${insertError.message}`
+          })
           continue
         }
 
@@ -145,13 +156,13 @@ export default function AdminPaqueteGaleria({ idPaquete, nombrePaquete = '', onG
         resetForm()
         await fetchGaleria()
         onGalleryUpdated?.()
-      } else {
+      } else if (errorCount) {
         setFeedback({ type: 'error', message: 'No pudimos subir las imágenes seleccionadas.' })
       }
     } catch (error) {
       console.error('No se pudieron subir las imágenes', error)
       if (!successCount) {
-        setFeedback({ type: 'error', message: 'No pudimos subir las imágenes seleccionadas.' })
+        setFeedback({ type: 'error', message: error.message || 'No pudimos subir las imágenes seleccionadas.' })
       }
     } finally {
       setSubmitting(false)
@@ -177,7 +188,7 @@ export default function AdminPaqueteGaleria({ idPaquete, nombrePaquete = '', onG
       onGalleryUpdated?.()
     } catch (error) {
       console.error('No se pudo registrar la imagen', error)
-      setFeedback({ type: 'error', message: 'No pudimos registrar la URL indicada.' })
+      setFeedback({ type: 'error', message: error.message || 'No pudimos registrar la URL indicada.' })
     } finally {
       setSubmitting(false)
     }
