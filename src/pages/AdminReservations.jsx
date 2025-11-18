@@ -90,7 +90,7 @@ export default function AdminReservations() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [reservas, setReservas] = useState([])
   const [estados, setEstados] = useState([])
-  const [filters, setFilters] = useState(defaultFilters)
+  const [filters, setFilters] = useState(() => ({ ...defaultFilters }))
   const [selection, setSelection] = useState({})
   const [selectedReservas, setSelectedReservas] = useState([])
   const [visibleReservas, setVisibleReservas] = useState([])
@@ -107,6 +107,11 @@ export default function AdminReservations() {
   const bulkModalRef = useRef(null)
   const editModalRef = useRef(null)
 
+  const safeReservas = useMemo(() => (Array.isArray(reservas) ? reservas : []), [reservas])
+  const safeEstados = useMemo(() => (Array.isArray(estados) ? estados : []), [estados])
+  const safeVisibleReservas = useMemo(() => (Array.isArray(visibleReservas) ? visibleReservas : []), [visibleReservas])
+  const currentFechaFilter = filters?.fecha ?? null
+
   const paymentStateIds = useMemo(() => ({
     pendiente: getPaymentStateClasses(1, DEFAULT_PAYMENT_STATES).id ?? 1,
     anticipo: getPaymentStateClasses(2, DEFAULT_PAYMENT_STATES).id ?? 2,
@@ -115,118 +120,127 @@ export default function AdminReservations() {
   const anticipoInfo = useMemo(() => getPaymentStateClasses(paymentStateIds.anticipo, DEFAULT_PAYMENT_STATES), [paymentStateIds])
 
   const reservadaEstadoId = useMemo(() => {
-    const estado = estados.find(item => normalize(item?.nombre_estado) === 'reservada')
+    const estado = safeEstados.find(item => normalize(item?.nombre_estado) === 'reservada')
     return estado?.id ?? null
-  }, [estados])
+  }, [safeEstados])
 
-  const loadReservas = async () => {
+  const loadReservas = useCallback(async () => {
     setLoading(true)
     setFeedback({ type: '', message: '' })
 
-    const [actividadesRes, estadosRes] = await Promise.all([
-      supabase
-        .from('actividad')
-        .select('id, idusuario, idagenda, idpaquete, idestado_actividad, idestado_pago, estado_pago:estado_pago ( id, nombre_estado )')
-        .order('id', { ascending: false }),
-      supabase
-        .from('estado_actividad')
-        .select('id, nombre_estado, orden')
-        .order('orden', { ascending: true })
-    ])
+    try {
+      const [actividadesRes, estadosRes] = await Promise.all([
+        supabase
+          .from('actividad')
+          .select('id, idusuario, idagenda, idpaquete, idestado_actividad, idestado_pago, estado_pago:estado_pago ( id, nombre_estado )')
+          .order('id', { ascending: false }),
+        supabase
+          .from('estado_actividad')
+          .select('id, nombre_estado, orden')
+          .order('orden', { ascending: true })
+      ])
 
-    const errors = [actividadesRes.error, estadosRes.error].filter(Boolean)
-    if (errors.length) {
-      errors.forEach(err => console.error('Error cargando reservas', err))
+      const errors = [actividadesRes.error, estadosRes.error].filter(Boolean)
+      if (errors.length) {
+        errors.forEach(err => console.error('Error cargando reservas', err))
+        setReservas([])
+        setEstados([])
+        setSelection({})
+        setSelectedReservas([])
+        setFeedback({ type: 'error', message: 'No se pudieron cargar las reservas. Intenta nuevamente.' })
+        return
+      }
+
+      const actividades = actividadesRes.data ?? []
+      const estadosData = estadosRes.data ?? []
+
+      const agendaIds = Array.from(new Set(actividades.map(item => item.idagenda).filter(Boolean)))
+      const paqueteIds = Array.from(new Set(actividades.map(item => item.idpaquete).filter(Boolean)))
+      const clienteIds = actividades.map(item => item.idusuario).filter(Boolean)
+
+      const [{ data: agendasData = [], error: agendaError }, { data: paquetesData = [], error: paquetesError }] = await Promise.all([
+        agendaIds.length
+          ? supabase.from('agenda').select('id, fecha, horainicio, horafin, idfotografo').in('id', agendaIds)
+          : Promise.resolve({ data: [], error: null }),
+        paqueteIds.length
+          ? supabase.from('paquete').select('id, nombre_paquete').in('id', paqueteIds)
+          : Promise.resolve({ data: [], error: null })
+      ])
+
+      const errorsSecundarios = [agendaError, paquetesError].filter(Boolean)
+      if (errorsSecundarios.length) errorsSecundarios.forEach(err => console.error('Error cargando datos relacionados', err))
+
+      const fotografoIds = Array.from(new Set((agendasData ?? []).map(a => a.idfotografo).filter(Boolean)))
+      const usuarioIds = Array.from(new Set([...clienteIds, ...fotografoIds]))
+
+      const { data: usuariosData = [], error: usuariosError } = usuarioIds.length
+        ? await supabase.from('usuario').select('id, username').in('id', usuarioIds)
+        : { data: [], error: null }
+
+      if (usuariosError) console.error('Error cargando usuarios relacionados', usuariosError)
+
+      const agendaMap = new Map((agendasData ?? []).map(agenda => [agenda.id, agenda]))
+      const paqueteMap = new Map((paquetesData ?? []).map(paquete => [paquete.id, paquete]))
+      const usuarioMap = new Map((usuariosData ?? []).map(usuario => [usuario.id, usuario]))
+      const estadoMap = new Map((estadosData ?? []).map(estado => [estado.id, estado]))
+
+      const formattedReservas = actividades.map(item => {
+        const agenda = agendaMap.get(item.idagenda)
+        const cliente = usuarioMap.get(item.idusuario)
+        const fotografo = agenda ? usuarioMap.get(agenda.idfotografo) : null
+        const paquete = paqueteMap.get(item.idpaquete)
+        const estado = estadoMap.get(item.idestado_actividad)
+
+        const estadoPagoInfo = getPaymentStateClasses(
+          item.estado_pago?.nombre_estado || item.estado_pago || item.idestado_pago,
+          DEFAULT_PAYMENT_STATES
+        )
+
+        return {
+          id: Number(item.id),
+          clienteId: cliente?.id != null ? Number(cliente.id) : null,
+          cliente: cliente?.username || 'Cliente sin nombre',
+          fotografoId: fotografo?.id != null ? Number(fotografo.id) : null,
+          fotografo: fotografo?.username || 'Sin asignar',
+          paquete: paquete?.nombre_paquete || 'Paquete sin asignar',
+          fecha: agenda?.fecha || null,
+          horaInicio: agenda?.horainicio || null,
+          horaFin: agenda?.horafin || null,
+          estadoId: item.idestado_actividad != null ? Number(item.idestado_actividad) : null,
+          estadoNombre: estado?.nombre_estado || 'Pendiente',
+          estadoPago: estadoPagoInfo.label,
+          estadoPagoId: estadoPagoInfo.id,
+          agendaId: item.idagenda != null ? Number(item.idagenda) : null
+        }
+      })
+
+      setEstados(estadosData)
+      setReservas(formattedReservas)
+      setSelection(
+        Object.fromEntries(
+          formattedReservas.map(reserva => [reserva.id, reserva.estadoId ? String(reserva.estadoId) : ''])
+        )
+      )
+      setSelectedReservas([])
+    } catch (error) {
+      console.error('Error inesperado cargando reservas', error)
       setReservas([])
       setEstados([])
       setSelection({})
       setSelectedReservas([])
-      setFeedback({ type: 'error', message: 'No se pudieron cargar las reservas. Intenta nuevamente.' })
+      setFeedback({ type: 'error', message: 'Ocurrió un error inesperado cargando las reservas.' })
+    } finally {
       setLoading(false)
-      return
     }
-
-    const actividades = actividadesRes.data ?? []
-    const estadosData = estadosRes.data ?? []
-
-    const agendaIds = Array.from(new Set(actividades.map(item => item.idagenda).filter(Boolean)))
-    const paqueteIds = Array.from(new Set(actividades.map(item => item.idpaquete).filter(Boolean)))
-    const clienteIds = actividades.map(item => item.idusuario).filter(Boolean)
-
-    const [{ data: agendasData = [], error: agendaError }, { data: paquetesData = [], error: paquetesError }] = await Promise.all([
-      agendaIds.length
-        ? supabase.from('agenda').select('id, fecha, horainicio, horafin, idfotografo').in('id', agendaIds)
-        : Promise.resolve({ data: [], error: null }),
-      paqueteIds.length
-        ? supabase.from('paquete').select('id, nombre_paquete').in('id', paqueteIds)
-        : Promise.resolve({ data: [], error: null })
-    ])
-
-    const errorsSecundarios = [agendaError, paquetesError].filter(Boolean)
-    if (errorsSecundarios.length) errorsSecundarios.forEach(err => console.error('Error cargando datos relacionados', err))
-
-    const fotografoIds = Array.from(new Set((agendasData ?? []).map(a => a.idfotografo).filter(Boolean)))
-    const usuarioIds = Array.from(new Set([...clienteIds, ...fotografoIds]))
-
-    const { data: usuariosData = [], error: usuariosError } = usuarioIds.length
-      ? await supabase.from('usuario').select('id, username').in('id', usuarioIds)
-      : { data: [], error: null }
-
-    if (usuariosError) console.error('Error cargando usuarios relacionados', usuariosError)
-
-    const agendaMap = new Map((agendasData ?? []).map(agenda => [agenda.id, agenda]))
-    const paqueteMap = new Map((paquetesData ?? []).map(paquete => [paquete.id, paquete]))
-    const usuarioMap = new Map((usuariosData ?? []).map(usuario => [usuario.id, usuario]))
-    const estadoMap = new Map((estadosData ?? []).map(estado => [estado.id, estado]))
-
-    const formattedReservas = actividades.map(item => {
-      const agenda = agendaMap.get(item.idagenda)
-      const cliente = usuarioMap.get(item.idusuario)
-      const fotografo = agenda ? usuarioMap.get(agenda.idfotografo) : null
-      const paquete = paqueteMap.get(item.idpaquete)
-      const estado = estadoMap.get(item.idestado_actividad)
-
-      const estadoPagoInfo = getPaymentStateClasses(
-        item.estado_pago?.nombre_estado || item.estado_pago || item.idestado_pago,
-        DEFAULT_PAYMENT_STATES
-      )
-
-      return {
-        id: Number(item.id),
-        clienteId: cliente?.id != null ? Number(cliente.id) : null,
-        cliente: cliente?.username || 'Cliente sin nombre',
-        fotografoId: fotografo?.id != null ? Number(fotografo.id) : null,
-        fotografo: fotografo?.username || 'Sin asignar',
-        paquete: paquete?.nombre_paquete || 'Paquete sin asignar',
-        fecha: agenda?.fecha || null,
-        horaInicio: agenda?.horainicio || null,
-        horaFin: agenda?.horafin || null,
-        estadoId: item.idestado_actividad != null ? Number(item.idestado_actividad) : null,
-        estadoNombre: estado?.nombre_estado || 'Pendiente',
-        estadoPago: estadoPagoInfo.label,
-        estadoPagoId: estadoPagoInfo.id,
-        agendaId: item.idagenda != null ? Number(item.idagenda) : null
-      }
-    })
-
-    setEstados(estadosData)
-    setReservas(formattedReservas)
-    setSelection(
-      Object.fromEntries(
-        formattedReservas.map(reserva => [reserva.id, reserva.estadoId ? String(reserva.estadoId) : ''])
-      )
-    )
-    setSelectedReservas([])
-    setLoading(false)
-  }
-
-  useEffect(() => {
-    loadReservas()
   }, [])
 
   useEffect(() => {
-    setSelectedReservas(prev => prev.filter(id => reservas.some(reserva => reserva.id === id)))
-  }, [reservas])
+    loadReservas()
+  }, [loadReservas])
+
+  useEffect(() => {
+    setSelectedReservas(prev => prev.filter(id => safeReservas.some(reserva => reserva.id === id)))
+  }, [safeReservas])
 
   useEffect(() => {
     if (!toast) return
@@ -239,7 +253,7 @@ export default function AdminReservations() {
     if (agendaDia) {
       const parsed = toDate(agendaDia)
       if (parsed) {
-        setFilters(prev => ({ ...prev, fecha: parsed }))
+        setFilters(prev => ({ ...(typeof prev === 'object' && prev !== null ? prev : defaultFilters), fecha: parsed }))
         if (typeof window !== 'undefined') {
           window.localStorage.setItem('admin-agenda-selected-day', agendaDia)
         }
@@ -250,24 +264,24 @@ export default function AdminReservations() {
       return
     }
 
-    if (!filters.fecha && typeof window !== 'undefined') {
+    if (!currentFechaFilter && typeof window !== 'undefined') {
       const stored = window.localStorage.getItem('admin-agenda-selected-day')
       if (stored) {
         const parsedStored = toDate(stored)
         if (parsedStored) {
-          setFilters(prev => ({ ...prev, fecha: parsedStored }))
+          setFilters(prev => ({ ...(typeof prev === 'object' && prev !== null ? prev : defaultFilters), fecha: parsedStored }))
         }
       }
     }
-  }, [filters.fecha, searchParams, setSearchParams])
+  }, [currentFechaFilter, searchParams, setSearchParams])
 
   const handleVisibleRowsChange = rows => {
     setVisibleReservas(Array.isArray(rows) ? rows : [])
   }
 
   const visibleReservaIds = useMemo(
-    () => visibleReservas.map(reserva => Number(reserva.id)).filter(id => !Number.isNaN(id)),
-    [visibleReservas]
+    () => safeVisibleReservas.map(reserva => Number(reserva.id)).filter(id => !Number.isNaN(id)),
+    [safeVisibleReservas]
   )
 
   const allVisibleSelected = useMemo(() => {
@@ -305,7 +319,7 @@ export default function AdminReservations() {
   const handleBulkApply = async () => {
     if (!bulkEstadoNombre || !selectedReservas.length) return
 
-    const matchedEstado = estados.find(
+    const matchedEstado = safeEstados.find(
       estado => normalize(estado?.nombre_estado) === normalize(bulkEstadoNombre)
     )
     const nuevoEstadoId = matchedEstado?.id ? Number(matchedEstado.id) : null
@@ -327,7 +341,7 @@ export default function AdminReservations() {
       const cantidad = result?.updated ?? selectedReservas.length
 
       if (nuevoEstadoId) {
-        const estadoActualizado = estados.find(item => Number(item.id) === nuevoEstadoId)
+        const estadoActualizado = safeEstados.find(item => Number(item.id) === nuevoEstadoId)
         setSelection(prev => {
           const next = { ...prev }
           selectedReservas.forEach(reservaId => {
@@ -387,32 +401,42 @@ export default function AdminReservations() {
   }
 
   const filteredReservas = useMemo(() => {
-    const searchTerm = normalize(filters.search)
-    return reservas.filter(reserva => {
-      const matchesSearch =
-        !searchTerm ||
-        normalize(reserva.cliente).includes(searchTerm) ||
-        String(reserva.id).includes(filters.search.trim())
+    try {
+      const searchValue = typeof filters?.search === 'string' ? filters.search : defaultFilters.search
+      const estadoValue = filters?.estado ?? defaultFilters.estado
+      const fotografoValue = filters?.fotografo ?? defaultFilters.fotografo
+      const fechaValue = filters?.fecha ?? defaultFilters.fecha
+      const searchTerm = normalize(searchValue)
 
-      const matchesEstado =
-        filters.estado === 'all' || String(reserva.estadoId ?? '') === String(filters.estado)
+      return safeReservas.filter(reserva => {
+        const matchesSearch =
+          !searchTerm ||
+          normalize(reserva.cliente).includes(searchTerm) ||
+          String(reserva.id).includes(searchValue.trim())
 
-      const matchesFotografo =
-        filters.fotografo === 'all' || String(reserva.fotografoId ?? '') === String(filters.fotografo)
+        const matchesEstado =
+          estadoValue === 'all' || String(reserva.estadoId ?? '') === String(estadoValue)
 
-      const matchesFecha = !filters.fecha || isSameDay(reserva.fecha, filters.fecha)
+        const matchesFotografo =
+          fotografoValue === 'all' || String(reserva.fotografoId ?? '') === String(fotografoValue)
 
-      return matchesSearch && matchesEstado && matchesFotografo && matchesFecha
-    })
-  }, [reservas, filters])
+        const matchesFecha = !fechaValue || isSameDay(reserva.fecha, fechaValue)
+
+        return matchesSearch && matchesEstado && matchesFotografo && matchesFecha
+      })
+    } catch (error) {
+      console.error('Error aplicando filtros de reservas', error)
+      return []
+    }
+  }, [filters, safeReservas])
 
   const fotografoOptions = useMemo(() => {
     const unique = new Map()
-    reservas.forEach(reserva => {
+    safeReservas.forEach(reserva => {
       if (reserva.fotografoId) unique.set(reserva.fotografoId, reserva.fotografo)
     })
     return Array.from(unique.entries()).map(([id, nombre]) => ({ id, nombre }))
-  }, [reservas])
+  }, [safeReservas])
 
   const openEditReserva = reserva => {
     if (!reserva) return
@@ -459,7 +483,7 @@ export default function AdminReservations() {
     }
 
     const estadoSeleccionado = estadoId
-      ? estados.find(item => Number(item.id) === estadoId)?.nombre_estado || ''
+      ? safeEstados.find(item => Number(item.id) === estadoId)?.nombre_estado || ''
       : ''
 
     const payload = {
@@ -667,7 +691,7 @@ export default function AdminReservations() {
                 disabled={entregada}
               >
                 <option value="">Selecciona un estado</option>
-                {estados.map(estado => (
+                {safeEstados.map(estado => (
                   <option key={estado.id} value={estado.id}>
                     {estado.nombre_estado}
                   </option>
@@ -686,15 +710,15 @@ export default function AdminReservations() {
         }
       }
     ],
-    [actualizarEstado, estados, selection, selectedReservas, toggleReservaSelection, updatingId]
+    [actualizarEstado, safeEstados, selection, selectedReservas, toggleReservaSelection, updatingId]
   )
 
   const onFilterChange = (field, value) => {
-    setFilters(prev => ({ ...prev, [field]: value }))
+    setFilters(prev => ({ ...(typeof prev === 'object' && prev !== null ? prev : defaultFilters), [field]: value }))
   }
 
   const handleClearFechaFilter = () => {
-    setFilters(prev => ({ ...prev, fecha: null }))
+    setFilters(prev => ({ ...(typeof prev === 'object' && prev !== null ? prev : defaultFilters), fecha: null }))
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem('admin-agenda-selected-day')
     }
@@ -729,7 +753,7 @@ export default function AdminReservations() {
       console.error('Error actualizando estado', error)
       setFeedback({ type: 'error', message: 'No se pudo actualizar el estado. Intenta de nuevo.' })
     } else {
-      const estadoActualizado = estados.find(item => Number(item.id) === nuevoEstadoId)
+      const estadoActualizado = safeEstados.find(item => Number(item.id) === nuevoEstadoId)
       setSelection(prev => ({ ...prev, [reserva.id]: String(nuevoEstadoId) }))
       setReservas(prev =>
         prev.map(item =>
@@ -757,9 +781,9 @@ export default function AdminReservations() {
   }, [
     anticipoInfo.id,
     anticipoInfo.label,
-    estados,
     paymentStateIds.anticipo,
     reservadaEstadoId,
+    safeEstados,
     selection,
     setFeedback,
     setReservas,
@@ -796,7 +820,7 @@ export default function AdminReservations() {
             <input
               className="border rounded-xl2 px-3 py-2"
               placeholder="Cliente o ID de reserva"
-              value={filters.search}
+              value={filters?.search ?? ''}
               onChange={event => onFilterChange('search', event.target.value)}
             />
           </label>
@@ -805,11 +829,11 @@ export default function AdminReservations() {
             <span className="font-medium text-slate-700">Filtrar por estado</span>
             <select
               className="border rounded-xl2 px-3 py-2"
-              value={filters.estado}
+              value={filters?.estado ?? 'all'}
               onChange={event => onFilterChange('estado', event.target.value)}
             >
               <option value="all">Todos los estados</option>
-              {estados.map(estado => (
+              {safeEstados.map(estado => (
                 <option key={estado.id} value={estado.id}>
                   {estado.nombre_estado}
                 </option>
@@ -821,7 +845,7 @@ export default function AdminReservations() {
             <span className="font-medium text-slate-700">Filtrar por fotógrafo</span>
             <select
               className="border rounded-xl2 px-3 py-2"
-              value={filters.fotografo}
+              value={filters?.fotografo ?? 'all'}
               onChange={event => onFilterChange('fotografo', event.target.value)}
             >
               <option value="all">Todos los fotógrafos</option>
@@ -836,11 +860,11 @@ export default function AdminReservations() {
           <div className="grid gap-2">
             <AdminDatePicker
               label="Filtrar por fecha"
-              value={filters.fecha}
+              value={currentFechaFilter}
               onChange={date => onFilterChange('fecha', date ?? null)}
               placeholder="Selecciona un día"
             />
-            {filters.fecha && (
+            {currentFechaFilter && (
               <button
                 type="button"
                 className="agenda-clear max-w-fit"
@@ -1056,7 +1080,7 @@ export default function AdminReservations() {
                   onChange={event => updateEditField('estado', event.target.value)}
                 >
                   <option value="">Mantener actual</option>
-                  {estados.map(estado => (
+                  {safeEstados.map(estado => (
                     <option key={estado.id} value={estado.id}>
                       {estado.nombre_estado}
                     </option>
