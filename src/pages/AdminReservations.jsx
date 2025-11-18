@@ -705,7 +705,7 @@ export default function AdminReservations() {
     setSelection(prev => ({ ...prev, [reservaId]: value }))
   }
 
-  const actualizarEstado = useCallback(async (reserva) => {
+  async function actualizarEstado(reserva) {
     const nuevoEstadoId = Number(selection[reserva.id])
     if (!nuevoEstadoId || nuevoEstadoId === reserva.estadoId) return
 
